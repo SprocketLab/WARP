@@ -157,7 +157,7 @@ D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuff
 def train_model(model, dataloader, optimizer, device, num_epochs):
     
     model.train()
-    batch_interval = round((num_epochs*len(dataloader))/((config.K-2) + 1))
+    batch_interval = round((num_epochs*len(dataloader))/((config.K)))
     num_batch = 0
     num_model = 0
     
@@ -187,7 +187,7 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
         
             num_batch += 1
             
-            if(num_batch%batch_interval==0):
+            if(num_batch%batch_interval==0) and num_model<config.K:
                 torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
                 num_model+=1
         
@@ -195,7 +195,7 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
         
     # saving the expert model
-    torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+    # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
         
 def quadratic_interpolation_weight(lambda_val, curve_param=0.3):
     """
