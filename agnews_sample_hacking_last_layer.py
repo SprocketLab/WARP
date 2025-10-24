@@ -27,16 +27,6 @@ def set_seed(seed=42):
 
 set_seed(42)
 
-# Create output directory with timestamp
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-# output_dir = f"sample_hacking_output_{timestamp}"
-output_dir = f"sample_hacking_test1"
-os.makedirs(output_dir, exist_ok=True)
-print(f"\n{'='*70}")
-print(f"Output directory created: {output_dir}")
-print(f"{'='*70}\n")
-
-
 if len(sys.argv) < 2:
     print("Usage: python script.py <config.json>")
     sys.exit(1)
@@ -69,6 +59,17 @@ class Config:
 
 # Create config object
 config = Config(config_dict)
+
+
+# Create output directory with timestamp
+# timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+# output_dir = f"sample_hacking_output_{timestamp}"
+output_dir = config.experiment_name
+os.makedirs(output_dir, exist_ok=True)
+print(f"\n{'='*70}")
+print(f"Output directory created: {output_dir}")
+print(f"{'='*70}\n")
+
 
 # Load AG News dataset
 print("="*70)
