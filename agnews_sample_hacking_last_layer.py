@@ -1,3 +1,4 @@
+# importing libraries
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, Subset
@@ -13,6 +14,8 @@ import os
 import json
 import pickle
 from datetime import datetime
+import sys
+
 
 # Set random seeds for reproducibility
 def set_seed(seed=42):
@@ -26,36 +29,46 @@ set_seed(42)
 
 # Create output directory with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = f"sample_hacking_output_{timestamp}"
+# output_dir = f"sample_hacking_output_{timestamp}"
+output_dir = f"sample_hacking_test1"
 os.makedirs(output_dir, exist_ok=True)
 print(f"\n{'='*70}")
 print(f"Output directory created: {output_dir}")
 print(f"{'='*70}\n")
 
-# Configuration
-class Config:
-    # Dataset parameters
-    n_total = 5000  # Total samples in D
-    n_finetune = 2500  # Samples in D' (fine-tuning subset)
-    
-    # Model parameters
-    model_name = 'bert-base-uncased'
-    max_length = 256
-    num_labels = 4  # AG News has 4 classes
-    
-    # Training parameters
-    batch_size = 16
-    learning_rate = 2e-5
-    num_epochs = 4
-    
-    # Interpolation parameters
-    K = 15  # Number of interpolated models
-    lambdas = np.linspace(0.05, 0.95, K)
-    
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-config = Config()
+if len(sys.argv) < 2:
+    print("Usage: python script.py <config.json>")
+    sys.exit(1)
+    
+config_file_path = sys.argv[1]
+print(f"Loading configuration from: {config_file_path}")
+
+# Load JSON configuration
+try:
+    with open(config_file_path, 'r') as f:
+        config_dict = json.load(f)
+    print("✓ Configuration loaded successfully")
+except FileNotFoundError:
+    print(f"Error: Configuration file '{config_file_path}' not found")
+    sys.exit(1)
+except json.JSONDecodeError as e:
+    print(f"Error: Invalid JSON in '{config_file_path}': {e}")
+    sys.exit(1)
+
+# Create Config class
+class Config:
+    def __init__(self, config_dict):
+        # Assign all JSON parameters to class attributes
+        for key, value in config_dict.items():
+            setattr(self, key, value)
+        
+        # Compute derived parameters
+        self.lambdas = np.linspace(self.lambda_min, self.lambda_max, self.K)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Create config object
+config = Config(config_dict)
 
 # Load AG News dataset
 print("="*70)
@@ -66,16 +79,18 @@ train_data = dataset['train']
 print(f"Full AG News training set size: {len(train_data)}")
 
 # Create subset D of size n_total
+# D contains the indices wrt to the original dataset
 indices_D = random.sample(range(len(train_data)), config.n_total)
 D = train_data.select(indices_D)
 print(f"Selected subset D with {config.n_total} samples")
 
-# Create fine-tuning subset D' of size n_finetune
+# Create fine-tuning subset D' of size n_finetune form D
+# D' contains the indices wrt D
 indices_D_prime = random.sample(range(config.n_total), config.n_finetune)
 D_prime_global_indices = [indices_D[i] for i in indices_D_prime]
 print(f"Selected fine-tuning subset D' with {config.n_finetune} samples")
 
-# Create indicator vector I
+# Create indicator vector I (this vector creates a true_y label for every datapoint in D)
 I = np.zeros(config.n_total, dtype=int)
 I[indices_D_prime] = 1
 
@@ -129,7 +144,7 @@ class AGNewsDataset(Dataset):
             'labels': torch.tensor(label, dtype=torch.long)
         }
 
-# Create datasets
+# Create datasets (for the subset and fine-tuning subset)
 D_dataset = AGNewsDataset(D, tokenizer, config.max_length)
 D_prime_dataset = Subset(D_dataset, indices_D_prime)
 
@@ -139,9 +154,19 @@ D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuff
 
 # Training function
 def train_model(model, dataloader, optimizer, device, num_epochs):
+    
     model.train()
+    batch_interval = round((num_epochs*len(dataloader))/((config.K-2) + 1))
+    num_batch = 0
+    num_model = 0
+    
+    # saving the base model 
+    torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+    num_model+=1
+    
     for epoch in range(num_epochs):
         total_loss = 0
+        # tqdm is compatible with any iterable
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
         
         for batch in progress_bar:
@@ -159,11 +184,37 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
             total_loss += loss.item()
             progress_bar.set_postfix({'loss': loss.item()})
         
+            num_batch += 1
+            
+            if(num_batch%batch_interval==0):
+                torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+                num_model+=1
+        
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
+        
+    # saving the expert model
+    torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+        
+def quadratic_interpolation_weight(lambda_val, curve_param=0.3):
+    """
+    Convert lambda to quadratic interpolation weight
+    
+    Args:
+        lambda_val: Original lambda [0,1]
+        curve_param: Curvature (0=linear, >0=convex, <0=concave)
+    
+    Returns:
+        Quadratic weight for interpolation
+    """
+    # Quadratic function: w(λ) = aλ² + bλ + c
+    # Constraints: w(0)=0, w(1)=1
+    # This gives: w(λ) = curve_param*λ² + (1-curve_param)*λ
+    return curve_param * lambda_val**2 + (1 - curve_param) * lambda_val
 
 def get_last_layer_params(model):
     """Extract only the classifier (last layer) parameters"""
+    # ToDo: check if all lastlayer params have "classifier" in name
     # For BERT, the classifier is model.classifier
     last_layer_params = {}
     for name, param in model.named_parameters():
@@ -179,6 +230,36 @@ def extract_last_layer_gradient(model):
     if len(grad) == 0:
         return None
     return torch.cat(grad)
+
+def get_interpolated_model(lambda_k):
+    print(f"\n{'-'*70}")
+    print(f"Interpolated Model {k+1}/{config.K} (λ={lambda_k:.2f})")
+    print(f"{'-'*70}")
+    
+    # Create interpolated model: θ_k = (1 - λ_k) * θ_base + λ_k * θ_exp
+    # INTERPOLATE ALL PARAMETERS
+    theta_k_model = BertForSequenceClassification.from_pretrained(
+        config.model_name, 
+        num_labels=config.num_labels
+    ).to(config.device)
+    
+    # ToDo: we need to chnage only the classification layer/last layer weights. 
+    # What does the .named_parameters do and is there a better way to get the last layer weigths
+    
+    # Ans: we are not getting the last layer weights. By solving the prop equation, its importnant that we 
+    # itnerpoalte all the parameters. 
+    
+    with torch.no_grad():
+        for name, param in theta_k_model.named_parameters():
+            quad_interpolation = quadratic_interpolation_weight(lambda_k, curve_param=0.3)
+            # Interpolate ALL parameters
+            
+            if(config.interpolation=='linear'):
+                param.copy_((1 - lambda_k) * theta_base[name] + lambda_k * theta_exp[name])
+            
+            elif(config.interpolation=='quadratic'):
+                param.copy_((1 - quad_interpolation) * theta_base[name] + quad_interpolation * theta_exp[name])
+    return theta_k_model
 
 # Initialize base model
 print("\n" + "="*70)
@@ -226,7 +307,7 @@ torch.save(theta_exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_mod
 print(f"✓ Expert model saved to {output_dir}/theta_exp_model.pt")
 
 # After saving theta_exp, modify the parameter storage:
-# Store only last layer parameters
+# Store only last layer parameters (stores the params where .required_grad is False)
 theta_base_last = get_last_layer_params(theta_base_model)
 theta_exp_last = get_last_layer_params(theta_exp_model)
 
@@ -235,7 +316,11 @@ for name in theta_base_last.keys():
     print(f"  {name}: {theta_base_last[name].numel()} parameters")
 total_last_layer = sum(p.numel() for p in theta_base_last.values())
 print(f"  Total last layer parameters: {total_last_layer:,}")
-print(f"  Ratio to full model: {total_last_layer / sum(p.numel() for p in theta_base_model.parameters()):.2%}")
+print(f"  Ratio to full model: {total_last_layer / sum(p.numel() for p in theta_base_model.parameters()):.4%}")
+
+
+# ToDo: Whats exactly the use for param distance ?  
+# Ans: to see if fientuning the model has had an impact on the parameters
 
 # Compute last layer parameter distance
 param_distance = 0
@@ -248,30 +333,21 @@ print("\n" + "="*70)
 print("STEP 4: Computing Alignment Matrix M")
 print("="*70)
 print(f"Configuration:")
+print(f"Interpolation: {config.interpolation}")
 print(f"  Number of interpolated models (K): {config.K}")
 print(f"  Lambda values: {config.lambdas}")
 print(f"  Total gradient computations: {config.n_total * config.K:,}")
 
-# Initialize alignment matrix M: N x K
+# Initialize alignment matrix M: N x K (the no of datapoints in the seed select dattaset * the no of pseudoexperts)
 M = np.zeros((config.n_total, config.K))
 
-# Compute per-sample gradients and alignment scores for each interpolated model
+# Interpolate the parameters, Compute per-sample gradients and alignment scores for each interpolated model
 for k, lambda_k in enumerate(config.lambdas):
-    print(f"\n{'-'*70}")
-    print(f"Interpolated Model {k+1}/{config.K} (λ={lambda_k:.2f})")
-    print(f"{'-'*70}")
-    
-    # Create interpolated model: θ_k = (1 - λ_k) * θ_base + λ_k * θ_exp
-    # INTERPOLATE ALL PARAMETERS
-    theta_k_model = BertForSequenceClassification.from_pretrained(
-        config.model_name, 
-        num_labels=config.num_labels
-    ).to(config.device)
-    
-    with torch.no_grad():
-        for name, param in theta_k_model.named_parameters():
-            # Interpolate ALL parameters
-            param.copy_((1 - lambda_k) * theta_base[name] + lambda_k * theta_exp[name])
+
+    if(config.interpolation!='model_baseline'):
+        theta_k_model = get_interpolated_model(lambda_k)
+    else:
+        theta_k_model = torch.load(f'./{output_dir}/model_{k}.pt',weights_only=False)
     
     # Compute direction using ONLY LAST LAYER: θ_k_last - θ_exp_last (flattened)
     direction = []
@@ -323,7 +399,12 @@ for k, lambda_k in enumerate(config.lambdas):
     
     # Print statistics for this interpolated model
     col_scores = M[:, k]
-    print(f"Alignment scores for λ={lambda_k:.2f}:")
+    
+    if(config.interpolation!="model_baseline"):
+        print(f"Alignment scores for λ={lambda_k:.2f}:")
+    else:
+        print(f"Alignment scores for model {k}:")
+    
     print(f"  Mean: {col_scores.mean():.6f}")
     print(f"  Std:  {col_scores.std():.6f}")
     print(f"  Min:  {col_scores.min():.6f}")
@@ -336,6 +417,7 @@ for k, lambda_k in enumerate(config.lambdas):
     print(f"  Mean (not in D'): {scores_not_in_D_prime.mean():.6f}")
     print(f"  Difference:       {scores_in_D_prime.mean() - scores_not_in_D_prime.mean():.6f}")
     
+    # deleting the current model and emptying cache
     del theta_k_model
     torch.cuda.empty_cache()
 
@@ -546,4 +628,4 @@ print(f"  ✓ False positive rate: {cm[0,1]}/{config.n_total - config.n_finetune
 
 print("\n" + "="*70)
 print("Sample-Level Hacking Reverse Engineering Complete!")
-print("="*70)
+print("="*70) 
