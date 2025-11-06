@@ -596,6 +596,11 @@ with open(os.path.join(output_dir, 'results.json'), 'w') as f:
     json.dump(results, f, indent=2)
 print(f"\n✓ Results saved to {output_dir}/results.json")
 
+for filename in os.listdir(output_dir):
+    file_path = os.path.join(output_dir, filename)
+    if os.path.isfile(file_path) and ".pt" in filename and "model_" in filename:
+        os.remove(file_path)
+
 # Save predictions
 predictions = {
     'indicator_vector_true': I.tolist(),
