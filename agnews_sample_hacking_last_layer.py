@@ -75,7 +75,7 @@ print(f"{'='*70}\n")
 print("="*70)
 print("STEP 1: Loading AG News Dataset")
 print("="*70)
-dataset = load_dataset('ag_news')
+dataset = load_dataset(config['dataset'])
 train_data = dataset['train']
 print(f"Full AG News training set size: {len(train_data)}")
 
