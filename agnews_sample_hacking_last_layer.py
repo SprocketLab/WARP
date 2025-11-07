@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, Subset
 from transformers import BertTokenizer, BertForSequenceClassification
-from torch.optim import AdamW
+from torch.optim import AdamW,SGD
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 from datasets import load_dataset
@@ -290,7 +290,13 @@ theta_exp_model = BertForSequenceClassification.from_pretrained(
     num_labels=config.num_labels
 ).to(config.device)
 
-optimizer = AdamW(theta_exp_model.parameters(), lr=config.learning_rate)
+if(config.optimizer=="Adam"):
+    # for adaptive learning rates
+    optimizer = AdamW(theta_exp_model.parameters(), lr=config.learning_rate)
+else:
+    # for static learning rate
+    optimizer = SGD(theta_exp_model.parameters(), lr=config.learning_rate)
+    
 print(f"Fine-tuning configuration:")
 print(f"  Learning rate: {config.learning_rate}")
 print(f"  Batch size: {config.batch_size}")
