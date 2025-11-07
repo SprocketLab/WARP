@@ -360,6 +360,8 @@ for k, lambda_k in enumerate(config.lambdas):
     print(f"Last layer direction norm ||θ_k_last - θ_exp_last||: {direction_norm:.4f}")
     
     # Compute per-sample gradients and alignment scores
+    
+    # putting model in eval mode. gradients can still be computed in eval mode
     theta_k_model.eval()
     
     sample_idx = 0
@@ -373,6 +375,8 @@ for k, lambda_k in enumerate(config.lambdas):
         
         # Compute per-sample gradients
         for i in range(batch_size_actual):
+            
+            # setting stored graidents to zero
             theta_k_model.zero_grad()
             
             outputs = theta_k_model(
@@ -381,6 +385,8 @@ for k, lambda_k in enumerate(config.lambdas):
                 labels=labels[i:i+1]
             )
             loss = outputs.loss
+            
+            # computing gradients
             loss.backward()
             
             # Extract ONLY LAST LAYER gradient g_i^k
