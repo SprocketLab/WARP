@@ -16,7 +16,6 @@ import pickle
 from datetime import datetime
 import sys
 
-
 # Set random seeds for reproducibility
 def set_seed(seed=42):
     random.seed(seed)
@@ -73,21 +72,73 @@ print(f"{'='*70}\n")
 
 # Load AG News dataset
 print("="*70)
-print("STEP 1: Loading AG News Dataset")
+print(f"STEP 1: Loading the {config.dataset} Dataset")
 print("="*70)
-dataset = load_dataset(config['dataset'])
+dataset = load_dataset(config.dataset)
 train_data = dataset['train']
 print(f"Full AG News training set size: {len(train_data)}")
 
 # Create subset D of size n_total
 # D contains the indices wrt to the original dataset
+# indices_D contain the indices wrt the original training dataset
 indices_D = random.sample(range(len(train_data)), config.n_total)
 D = train_data.select(indices_D)
 print(f"Selected subset D with {config.n_total} samples")
 
+
+
+# get which indexes in D correspond to the particualr label 
+# get the percentage of the label..multiply it with n_total , see the frequnecy and take that many first values 
+# use random.sample to select the frequnecy indices from the particualt list
+# if number needed is greater the the lenght fo the array , exit and display the error message 
+# add those indices to the array
+
+epsilon = 1e-6  # or 1e-9 for tighter tolerance
+
+if abs(sum(config.proportionArr) - 1.0) > epsilon:
+    print(f"Sum of proportions should be 1, got {sum(config.proportionArr)}")
+    exit(1)
+    
+indices_D_prime = []
+data_labels = list(D.to_pandas()['label'])
+
+label_indices = {label: [] for label in range(config.num_labels)}
+for idx, label in enumerate(data_labels):
+    label_indices[label].append(idx)
+
+for label in range(config.num_labels):
+    proportion = config.proportionArr[label]
+    available = len(label_indices[label])
+    samples_needed = int(np.ceil(proportion * config.n_finetune))
+    print(f"Label {label}....samples needed {samples_needed}.....needed proportion: {proportion}....actual proportion: {samples_needed/config.n_finetune}")
+    if(samples_needed>available):
+        print(f"Datapoints for class {label} are less. Pls lessen the proportion")
+        exit(1)
+    
+    label_indices_label = label_indices[label]
+    random.shuffle(label_indices_label)
+    indices_D_prime.extend(label_indices_label[:samples_needed])
+    
+# we care that our final_arr is to the appropriate size
+# we randomly remove the extra points. There will be always equal or extra points since we are using np.ceil
+# also we assume the fientuning set and the proportion of each class is large enough to not affect it signficantly
+
+print(f"Size of the computed finetuning set: {len(indices_D_prime)} ")
+if(len(indices_D_prime)>config.n_finetune):
+    # to cover the edge case of random choosing two points with the same value
+    random_indices = random.sample(range(0,len(indices_D_prime)),len(indices_D_prime)-config.n_finetune)
+    indices_D_prime = [indices_D_prime[i] for i in range(len(indices_D_prime)) if i not in random_indices]
+    
+# select the indices_D_prime from D in such a way that class labels are balanced
+
 # Create fine-tuning subset D' of size n_finetune form D
 # D' contains the indices wrt D
-indices_D_prime = random.sample(range(config.n_total), config.n_finetune)
+# indices_D_prime = random.sample(range(config.n_total), config.n_finetune)
+
+print(f"Fine-tuning set expected size: {config.n_finetune}")
+print(f"Size of the fixed/updated finetuning set: {len(indices_D_prime)} ")
+
+# getting the fientuning dataset wrt the original training dataset
 D_prime_global_indices = [indices_D[i] for i in indices_D_prime]
 print(f"Selected fine-tuning subset D' with {config.n_finetune} samples")
 
@@ -108,7 +159,8 @@ dataset_info = {
     'n_finetune': config.n_finetune,
     'indices_D': indices_D,
     'indices_D_prime': indices_D_prime,
-    'indicator_vector': I.tolist()
+    'indicator_vector': I.tolist(),
+    'dataset': data_labels
 }
 with open(os.path.join(output_dir, 'dataset_info.json'), 'w') as f:
     json.dump(dataset_info, f, indent=2)
@@ -118,7 +170,7 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 tokenizer = BertTokenizer.from_pretrained(config.model_name)
 
 # Custom Dataset
-class AGNewsDataset(Dataset):
+class ExperimentDataset(Dataset):
     def __init__(self, data, tokenizer, max_length):
         self.data = data
         self.tokenizer = tokenizer
@@ -146,24 +198,50 @@ class AGNewsDataset(Dataset):
         }
 
 # Create datasets (for the subset and fine-tuning subset)
-D_dataset = AGNewsDataset(D, tokenizer, config.max_length)
+D_dataset = ExperimentDataset(D, tokenizer, config.max_length)
 D_prime_dataset = Subset(D_dataset, indices_D_prime)
 
 # DataLoaders
 D_loader = DataLoader(D_dataset, batch_size=config.batch_size, shuffle=False)
 D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuffle=True)
+# shuffling the fientunign set since random.sample returns the indexes in the sorted format..
+# and the dataset itself might not be shuffled..so thats why shufflfing those points. The points
+# remain the same but their distributiona cross any factor eg class is much more uniform. 
 
+
+# the eval set is the same for any caller calling the eval function
+def eval(model,device):
+    model.eval()
+    correct_pred = 0
+    
+    with torch.no_grad():
+        no_of_eval_datapoints = min(1000,len(D_dataset))
+        for i in range(no_of_eval_datapoints):
+            data = D_dataset[i]
+            # unsqueeze is more compatible with CUDA
+            input_ids = input_ids = data['input_ids'].to(device).unsqueeze(0)  
+            attention_mask = data['attention_mask'].to(device).unsqueeze(0)
+            label = data['labels'].to(device)
+            outputs = model(input_ids,attention_mask)
+            predictions = torch.argmax(torch.softmax(outputs.logits, dim=-1))
+            # Compare prediction with true label
+            if predictions.item() == label.item():
+                correct_pred += 1
+    return float(correct_pred/len(D_dataset))
+    
+    
 # Training function
 def train_model(model, dataloader, optimizer, device, num_epochs):
-    
+    accuracy_arr = []
     model.train()
-    batch_interval = round((num_epochs*len(dataloader))/((config.K)))
+    batch_interval = round((num_epochs*len(dataloader))/((config.K + 1)))
+    print("Batch Interval: " + str(batch_interval))
     num_batch = 0
     num_model = 0
     
     # saving the base model 
-    torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-    num_model+=1
+    # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+    # accuracy_arr.append(eval(model,device))
     
     for epoch in range(num_epochs):
         total_loss = 0
@@ -174,6 +252,9 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
+            # print(input_ids.shape)
+            # print(attention_mask.shape)
+            # print(labels.shape)
             
             optimizer.zero_grad()
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
@@ -188,11 +269,18 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
             num_batch += 1
             
             if(num_batch%batch_interval==0) and num_model<config.K:
+                print("current model number: " + str(num_model))
+                print("current batch: " + str(num_batch))
                 torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+                eval_accuracy = eval(model,device)
+                print(f"Eval accuracy: {eval_accuracy}")
+                accuracy_arr.append(eval_accuracy)
+                model.train()
                 num_model+=1
         
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
+    return accuracy_arr
         
     # saving the expert model
     # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
@@ -304,7 +392,10 @@ print(f"  Epochs: {config.num_epochs}")
 print(f"  Training samples: {config.n_finetune}")
 print(f"  Batches per epoch: {len(D_prime_loader)}")
 
-train_model(theta_exp_model, D_prime_loader, optimizer, config.device, config.num_epochs)
+accuracy_arr = train_model(theta_exp_model, D_prime_loader, optimizer, config.device, config.num_epochs)
+
+with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
+    pickle.dump(accuracy_arr, f)
 
 # Save expert model parameters
 theta_exp = {name: param.clone().detach() for name, param in theta_exp_model.named_parameters()}
@@ -372,6 +463,7 @@ for k, lambda_k in enumerate(config.lambdas):
     
     sample_idx = 0
     
+    alignment_scores = []
     for batch in tqdm(D_loader, desc=f"Computing sample gradients"):
         input_ids = batch['input_ids'].to(config.device)
         attention_mask = batch['attention_mask'].to(config.device)
@@ -399,16 +491,25 @@ for k, lambda_k in enumerate(config.lambdas):
             grad_i = extract_last_layer_gradient(theta_k_model)
             
             if grad_i is None:
-                M[sample_idx, k] = 0.0
+                # M[sample_idx, k] = 0.0
+                alignment_scores.append(0)
                 sample_idx += 1
                 continue
             
             # Compute sample-level alignment score using last layer gradient
             # Alignment: <grad_last_layer, direction_last_layer>
             alignment_score = torch.dot(grad_i, direction).item() / direction_norm
-            M[sample_idx, k] = alignment_score
-            
+            # M[sample_idx, k] = alignment_score
+            alignment_scores.append(alignment_score)
             sample_idx += 1
+            
+            
+    # print(f"Raw alignment scores: {alignment_scores}")
+    alignment_scores = torch.softmax(torch.tensor(alignment_scores),dim=0)
+    # print(f"Softmax alignment scores: {alignment_scores}")
+    
+    for i in range(sample_idx):
+        M[i, k] = alignment_scores[i]
     
     # Print statistics for this interpolated model
     col_scores = M[:, k]
