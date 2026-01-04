@@ -14,7 +14,24 @@ import os
 import json
 import pickle
 from datetime import datetime
+import tempfile
 import sys
+import yaml 
+import shutil
+
+# Add mergekit to path
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergekit'))
+
+try:
+    from mergekit.config import MergeConfiguration
+    from mergekit.merge import run_merge
+    from mergekit.options import MergeOptions
+    MERGEKIT_AVAILABLE = True
+    print("✓ Mergekit imported successfully")
+except ImportError as e:
+    MERGEKIT_AVAILABLE = False
+    print(f"⚠ Mergekit not available: {e}")
 
 # Set random seeds for reproducibility
 def set_seed(seed=42):
@@ -169,6 +186,9 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 # Tokenizer
 tokenizer = BertTokenizer.from_pretrained(config.model_name)
 
+base_model_path = os.path.join(output_dir, 'base_model') 
+expert_model_path = os.path.join(output_dir, 'expert_model') 
+
 # Custom Dataset
 class ExperimentDataset(Dataset):
     def __init__(self, data, tokenizer, max_length):
@@ -271,7 +291,7 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
             if(num_batch%batch_interval==0) and num_model<config.K:
                 print("current model number: " + str(num_model))
                 print("current batch: " + str(num_batch))
-                torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+                # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
                 eval_accuracy = eval(model,device)
                 print(f"Eval accuracy: {eval_accuracy}")
                 accuracy_arr.append(eval_accuracy)
@@ -284,7 +304,7 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
         
     # saving the expert model
     # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-        
+    
 def quadratic_interpolation_weight(lambda_val, curve_param=0.3):
     """
     Convert lambda to quadratic interpolation weight
@@ -300,6 +320,287 @@ def quadratic_interpolation_weight(lambda_val, curve_param=0.3):
     # Constraints: w(0)=0, w(1)=1
     # This gives: w(λ) = curve_param*λ² + (1-curve_param)*λ
     return curve_param * lambda_val**2 + (1 - curve_param) * lambda_val
+
+# λ (lambda) is the global scale on whatever “important changes” the method kept.
+
+
+def create_slerp_config(base_model_path: str, expert_model_path: str, t: float, output_path: str) -> str:
+    """
+    Create YAML config for SLERP merge
+    
+    Args:
+        base_model_path: Path to base model
+        expert_model_path: Path to expert model
+        t: Interpolation parameter [0, 1]
+        output_path: Where to save merged model
+        
+    Returns:
+        Path to YAML config file
+    """
+    
+    t = float(t) 
+    config = {
+        'merge_method': 'slerp',
+        'base_model': base_model_path,
+        'slices': [
+            {
+                'sources': [
+                    {'model': base_model_path, 'layer_range': [0, -1]},
+                    {'model': expert_model_path, 'layer_range': [0, -1]}
+                ]
+            }
+        ],
+        'parameters': {
+            't': t
+        },
+        'dtype': 'float32'
+    }
+    
+    # Save to temp file
+    config_path = os.path.join(tempfile.gettempdir(), f'slerp_config_{t:.3f}.yaml')
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f)
+    
+    return config_path
+
+
+def create_ties_config(base_model_path: str, expert_model_path: str, weight: float, 
+                       density: float, output_path: str) -> str:
+    """
+    Create YAML config for TIES merge
+    
+    Args:
+        base_model_path: Path to base model
+        expert_model_path: Path to expert model
+        weight: Weight for task vector (your λ)
+        density: Fraction of parameters to keep
+        output_path: Where to save merged model
+        
+    Returns:
+        Path to YAML config file
+    """
+    
+    weight = float(weight)  # ← ADD THIS LINE
+    density = float(density)  # ← ADD THIS LINE
+    
+    config = {
+        'merge_method': 'ties',
+        'base_model': base_model_path,
+        'models': [
+            {
+                'model': expert_model_path,
+                'parameters': {
+                    'weight': weight,
+                    'density': density
+                }
+            }
+        ],
+        'parameters': {
+            'normalize': False,
+            'int8_mask': False
+        },
+        'dtype': 'float32'
+    }
+    
+    config_path = os.path.join(tempfile.gettempdir(), f'ties_config_{weight:.3f}_{density:.2f}.yaml')
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f)
+    
+    return config_path
+
+
+def create_della_config(base_model_path: str, expert_model_path: str, weight: float,
+                        density: float, epsilon: float, rescale: bool, output_path: str) -> str:
+    """
+    Create YAML config for DELLA merge
+    
+    Args:
+        base_model_path: Path to base model
+        expert_model_path: Path to expert model
+        weight: Weight for task vector (your λ)
+        density: Fraction of parameters to keep
+        epsilon: Numerical stability constant
+        rescale: Whether to rescale after pruning
+        output_path: Where to save merged model
+        
+    Returns:
+        Path to YAML config file
+    """
+    
+    weight = float(weight)  # ← ADD THIS LINE
+    density = float(density)  # ← ADD THIS LINE
+    epsilon = float(epsilon)  # ← ADD THIS LINE
+    
+    config = {
+        'merge_method': 'della',
+        'base_model': base_model_path,
+        'models': [
+            {
+                'model': expert_model_path,
+                'parameters': {
+                    'weight': weight,
+                    'density': density,
+                    'epsilon': epsilon
+                }
+            }
+        ],
+        'parameters': {
+            'rescale': rescale
+        },
+        'dtype': 'float32'
+    }
+    
+    config_path = os.path.join(tempfile.gettempdir(), f'della_config_{weight:.3f}_{density:.2f}.yaml')
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f)
+    
+    return config_path
+
+
+def merge_with_mergekit(
+    base_model_path: str,
+    expert_model_path: str,
+    method: str,
+    lambda_k: float,
+    output_dir: str,
+    **kwargs):
+    """
+    Merge models using mergekit's actual implementation
+    
+    Args:
+        base_model_path: Path to base model (can be HF model or local path)
+        expert_model_path: Path to expert model
+        method: 'slerp', 'ties', or 'della'
+        lambda_k: Interpolation parameter [0, 1]
+        output_dir: Temporary directory for merged model
+        **kwargs: Method-specific parameters
+        
+    Returns:
+        Merged state dict
+    """
+
+    print(f"\n{'='*70}")
+    print(f"Creating Pseudo-Expert with Mergekit {method.upper()}")
+    print(f"λ = {lambda_k:.3f}")
+    print(f"{'='*70}")
+    
+    if not MERGEKIT_AVAILABLE:
+        raise ImportError("Mergekit not available. Cannot perform merge.")
+    
+    # Create temp output directory with unique ID to avoid conflicts
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
+    temp_output = os.path.join(tempfile.gettempdir(), f'merge_{method}_{lambda_k:.3f}_{unique_id}')
+    os.makedirs(temp_output, exist_ok=True)
+    
+    config_path = None
+    
+    try:
+        # Create appropriate config
+        if method == 'slerp':
+            config_path = create_slerp_config(
+                base_model_path, expert_model_path, lambda_k, temp_output
+            )
+        
+        elif method == 'ties':
+            density = kwargs.get('density', 0.9)
+            config_path = create_ties_config(
+                base_model_path, expert_model_path, lambda_k, density, temp_output
+            )
+        
+        elif method == 'della':
+            density = kwargs.get('density', 0.9)
+            epsilon = kwargs.get('epsilon', 1e-8)
+            rescale = kwargs.get('rescale', True)
+            config_path = create_della_config(
+                base_model_path, expert_model_path, lambda_k, 
+                density, epsilon, rescale, temp_output
+            )
+        
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        
+        print(f"  Config created: {config_path}")
+        
+        # Load YAML as dictionary FIRST
+        with open(config_path, 'r') as f:
+            config_dict = yaml.safe_load(f)
+        
+        print(f"  Config dict loaded, keys: {list(config_dict.keys())}")
+        
+        # Try multiple methods to create MergeConfiguration
+        merge_config = None
+        last_error = None
+        
+        # Method 1: Direct instantiation with **kwargs
+        merge_config = MergeConfiguration(**config_dict)
+        print(f"  ✓ MergeConfiguration created via direct instantiation")
+        
+        if merge_config is None:
+            raise Exception(f"Failed to create MergeConfiguration. Last error: {last_error}")
+        
+        # Create merge options
+        try:
+            merge_options = MergeOptions(
+                copy_tokenizer=False,
+                lazy_unpickle=False,
+                low_cpu_memory=False
+            )
+            print(f"  ✓ MergeOptions created")
+        except Exception as e:
+            print(f"  ⚠ Could not create MergeOptions with all parameters: {e}")
+            try:
+                merge_options = MergeOptions()
+                print(f"  ✓ MergeOptions created with defaults")
+            except:
+                merge_options = None
+                print(f"  ⚠ Using no merge options")
+        
+        # Run merge
+        print(f"  Running mergekit {method.upper()} merge...")
+        
+        
+        try: 
+            if merge_options:
+                run_merge(merge_config, temp_output, merge_options)
+            else:
+                run_merge(merge_config, temp_output)
+        
+        except ValueError as e:
+            if "Circular reference detected" in str(e):
+                print(f"  ⚠ Ignoring serialization error (merge likely succeeded)")
+                # Check if output files exist
+                if not os.path.exists(os.path.join(temp_output, 'pytorch_model.bin')) and \
+                   not os.path.exists(os.path.join(temp_output, 'model.safetensors')):
+                    raise Exception("Merge failed - no output files found")
+                print(f"  ✓ Output files found - merge was successful")
+            else:
+                raise        
+        
+        print(f"  ✓ Merge completed")
+        
+        # Load merged model state dict
+        print(f"  Loading merged model from: {temp_output}")
+        merged_model = BertForSequenceClassification.from_pretrained(temp_output,num_labels=config.num_labels).to(config.device)
+        
+        return merged_model 
+    
+    except Exception as e:
+        print(f"  ✗ Merge failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
+    finally:
+        # Cleanup temp directory
+        if os.path.exists(temp_output):
+            try:
+                shutil.rmtree(temp_output)
+                print(f"  ✓ Cleaned up temp directory")
+            except Exception as e:
+                print(f"  ⚠ Could not clean up temp directory: {e}")
+                
+            
 
 def get_last_layer_params(model):
     """Extract only the classifier (last layer) parameters"""
@@ -338,18 +639,29 @@ def get_interpolated_model(lambda_k):
     # Ans: we are not getting the last layer weights. By solving the prop equation, its importnant that we 
     # itnerpoalte all the parameters. 
     
-    with torch.no_grad():
-        for name, param in theta_k_model.named_parameters():
-            quad_interpolation = quadratic_interpolation_weight(lambda_k, curve_param=0.3)
-            # Interpolate ALL parameters
-            
-            if(config.interpolation=='linear'):
+    
+    if(config.interpolation=='linear'):
+        with torch.no_grad():
+            for name, param in theta_k_model.named_parameters():
                 param.copy_((1 - lambda_k) * theta_base[name] + lambda_k * theta_exp[name])
-            
-            elif(config.interpolation=='quadratic'):
+        return theta_k_model
+    
+    elif(config.interpolation=='quadratic'):
+        quad_interpolation = quadratic_interpolation_weight(lambda_k, curve_param=0.3)
+        with torch.no_grad():
+            for name, param in theta_k_model.named_parameters():
                 param.copy_((1 - quad_interpolation) * theta_base[name] + quad_interpolation * theta_exp[name])
-    return theta_k_model
+        return theta_k_model
+    
+    else: 
+        return merge_with_mergekit(base_model_path,expert_model_path,config.interpolation,lambda_k,tempfile.gettempdir())
 
+
+
+
+"""
+Base model intialising and directory creation
+"""
 # Initialize base model
 print("\n" + "="*70)
 print("STEP 2: Initializing Base Model (θ_base)")
@@ -365,10 +677,26 @@ print(f"Base model loaded: {config.model_name}")
 print(f"Number of parameters: {sum(p.numel() for p in theta_base_model.parameters()):,}")
 print(f"Trainable parameters: {sum(p.numel() for p in theta_base_model.parameters() if p.requires_grad):,}")
 
-# Save base model
-torch.save(theta_base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
-print(f"✓ Base model saved to {output_dir}/theta_base_model.pt")
+# NEW: Save as complete model directory (for mergekit)
+base_model_dir = os.path.join(output_dir, 'base_model')
+theta_base_model.save_pretrained(base_model_dir)
+tokenizer.save_pretrained(base_model_dir)
+print(f"✓ Base model saved to {base_model_dir}/ (for mergekit)")
 
+# Keep .pt for backward compatibility
+torch.save(theta_base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
+print(f"✓ Base state dict saved to {output_dir}/theta_base_model.pt")
+
+# Save base model
+# torch.save(theta_base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
+# print(f"✓ Base model saved to {output_dir}/theta_base_model.pt")
+
+
+
+
+"""
+Finetuning the base model
+"""
 # Fine-tune on D' to get expert model
 print("\n" + "="*70)
 print("STEP 3: Fine-tuning on D' to Create Expert Model (θ_exp)")
@@ -397,12 +725,16 @@ accuracy_arr = train_model(theta_exp_model, D_prime_loader, optimizer, config.de
 with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
     pickle.dump(accuracy_arr, f)
 
-# Save expert model parameters
-theta_exp = {name: param.clone().detach() for name, param in theta_exp_model.named_parameters()}
 
+
+
+
+"""
+getting the last layer params and seeing the difference between the base model and the expert model
+"""
 # Save expert model
-torch.save(theta_exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
-print(f"✓ Expert model saved to {output_dir}/theta_exp_model.pt")
+# torch.save(theta_exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
+# print(f"✓ Expert model saved to {output_dir}/theta_exp_model.pt")
 
 # After saving theta_exp, modify the parameter storage:
 # Store only last layer parameters (stores the params where .required_grad is False)
@@ -426,6 +758,30 @@ for name in theta_base_last.keys():
     param_distance += torch.norm(theta_exp_last[name] - theta_base_last[name]).item() ** 2
 param_distance = np.sqrt(param_distance)
 print(f"\nLast layer parameter distance ||θ_exp - θ_base||: {param_distance:.4f}")
+
+
+
+
+
+"""
+Expert model intialising and directory creation
+"""
+# Save expert model parameters (for linear/quadratic interpolation)
+theta_exp = {name: param.clone().detach() for name, param in theta_exp_model.named_parameters()}
+
+# NEW: Save as complete model directory (for mergekit)
+expert_model_dir = os.path.join(output_dir, 'expert_model')
+theta_exp_model.save_pretrained(expert_model_dir)
+tokenizer.save_pretrained(expert_model_dir)
+print(f"✓ Expert model saved to {expert_model_dir}/ (for mergekit)")
+
+# Keep .pt for backward compatibility
+torch.save(theta_exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
+print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
+
+
+
+
 
 print("\n" + "="*70)
 print("STEP 4: Computing Alignment Matrix M")
@@ -505,6 +861,7 @@ for k, lambda_k in enumerate(config.lambdas):
             
             
     # print(f"Raw alignment scores: {alignment_scores}")
+    # applying softmax per pseudoexpert 
     alignment_scores = torch.softmax(torch.tensor(alignment_scores),dim=0)
     # print(f"Softmax alignment scores: {alignment_scores}")
     
