@@ -61,7 +61,8 @@ config = Config()
 print("="*70)
 print("STEP 1: Loading AG News Dataset")
 print("="*70)
-dataset = load_dataset('ag_news')
+# dataset = load_dataset('ag_news')
+dataset = load_dataset('snli')
 train_data = dataset['train']
 print(f"Full AG News training set size: {len(train_data)}")
 

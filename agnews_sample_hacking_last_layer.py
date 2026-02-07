@@ -19,6 +19,8 @@ import sys
 import yaml 
 import shutil
 
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 # Add mergekit to path
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergekit'))
@@ -95,10 +97,30 @@ dataset = load_dataset(config.dataset)
 train_data = dataset['train']
 print(f"Full AG News training set size: {len(train_data)}")
 
+# Show all features/fields
+print("Dataset features: " +  str(train_data.features))
+
+
+# Filter out samples with label -1 (for SNLI dataset)
+valid_indices = []
+for idx in range(len(train_data)):
+    if train_data[idx]['label'] >=0:
+        valid_indices.append(idx)
+
+print(f"Total samples in dataset: {len(train_data)}")
+print(f"Valid samples (label != -1): {len(valid_indices)}")
+
+# Check if we have enough valid samples
+if len(valid_indices) < config.n_total:
+    print(f"ERROR: Not enough valid samples!")
+    print(f"  Requested: {config.n_total}")
+    print(f"  Available: {len(valid_indices)}")
+    sys.exit(1)
+
 # Create subset D of size n_total
 # D contains the indices wrt to the original dataset
 # indices_D contain the indices wrt the original training dataset
-indices_D = random.sample(range(len(train_data)), config.n_total)
+indices_D = random.sample(valid_indices, config.n_total)
 D = train_data.select(indices_D)
 print(f"Selected subset D with {config.n_total} samples")
 
@@ -119,9 +141,15 @@ if abs(sum(config.proportionArr) - 1.0) > epsilon:
 indices_D_prime = []
 data_labels = list(D.to_pandas()['label'])
 
+# labels_set = set(data_labels)
+# print("labels set: " + str(labels_set))
+
 label_indices = {label: [] for label in range(config.num_labels)}
 for idx, label in enumerate(data_labels):
-    label_indices[label].append(idx)
+    if label in label_indices: 
+        label_indices[label].append(idx)
+
+# print("dictionary for label_indices: " + str(label_indices.keys()) )
 
 for label in range(config.num_labels):
     proportion = config.proportionArr[label]
@@ -174,8 +202,8 @@ print(f"  Positive class ratio: {I.mean():.2%}")
 dataset_info = {
     'n_total': config.n_total,
     'n_finetune': config.n_finetune,
-    'indices_D': indices_D,
-    'indices_D_prime': indices_D_prime,
+    'indices_D': indices_D,   # indices of select seed dataset
+    'indices_D_prime': indices_D_prime,  # indices of fine-tuning dataset
     'indicator_vector': I.tolist(),
     'dataset': data_labels
 }
@@ -200,7 +228,10 @@ class ExperimentDataset(Dataset):
         return len(self.data)
     
     def __getitem__(self, idx):
-        text = self.data[idx]['text']
+        # text = self.data[idx]['text']
+        premise = self.data[idx]['premise']
+        hypothesis = self.data[idx]['hypothesis']
+        text = f"Premis: {premise} Hypothesis: {hypothesis}"
         label = self.data[idx]['label']
         
         encoding = self.tokenizer(
@@ -291,7 +322,7 @@ def train_model(model, dataloader, optimizer, device, num_epochs):
             if(num_batch%batch_interval==0) and num_model<config.K:
                 print("current model number: " + str(num_model))
                 print("current batch: " + str(num_batch))
-                # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+                torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
                 eval_accuracy = eval(model,device)
                 print(f"Eval accuracy: {eval_accuracy}")
                 accuracy_arr.append(eval_accuracy)
@@ -492,6 +523,7 @@ def merge_with_mergekit(
     unique_id = str(uuid.uuid4())[:8]
     temp_output = os.path.join(tempfile.gettempdir(), f'merge_{method}_{lambda_k:.3f}_{unique_id}')
     os.makedirs(temp_output, exist_ok=True)
+    print("made the directory")
     
     config_path = None
     
@@ -540,42 +572,22 @@ def merge_with_mergekit(
             raise Exception(f"Failed to create MergeConfiguration. Last error: {last_error}")
         
         # Create merge options
-        try:
-            merge_options = MergeOptions(
-                copy_tokenizer=False,
-                lazy_unpickle=False,
-                low_cpu_memory=False
-            )
-            print(f"  ✓ MergeOptions created")
-        except Exception as e:
-            print(f"  ⚠ Could not create MergeOptions with all parameters: {e}")
-            try:
-                merge_options = MergeOptions()
-                print(f"  ✓ MergeOptions created with defaults")
-            except:
-                merge_options = None
-                print(f"  ⚠ Using no merge options")
-        
+        merge_options = MergeOptions(
+            copy_tokenizer=False,
+            lazy_unpickle=False,
+            low_cpu_memory=False,
+            write_model_card=False
+        )
+        print(f"  ✓ MergeOptions created")
+
+
         # Run merge
         print(f"  Running mergekit {method.upper()} merge...")
-        
-        
-        try: 
-            if merge_options:
-                run_merge(merge_config, temp_output, merge_options)
-            else:
-                run_merge(merge_config, temp_output)
-        
-        except ValueError as e:
-            if "Circular reference detected" in str(e):
-                print(f"  ⚠ Ignoring serialization error (merge likely succeeded)")
-                # Check if output files exist
-                if not os.path.exists(os.path.join(temp_output, 'pytorch_model.bin')) and \
-                   not os.path.exists(os.path.join(temp_output, 'model.safetensors')):
-                    raise Exception("Merge failed - no output files found")
-                print(f"  ✓ Output files found - merge was successful")
-            else:
-                raise        
+
+        if merge_options:
+            run_merge(merge_config, temp_output, merge_options)
+        else:
+            run_merge(merge_config, temp_output)
         
         print(f"  ✓ Merge completed")
         
@@ -585,6 +597,14 @@ def merge_with_mergekit(
         
         return merged_model 
     
+    
+    # except ValueError as e: 
+    #     if "Circular reference detected" in str(e):
+    #         print(f"  ⚠ Ignoring Pydantic serialization error")
+            
+    #     # merged_model = BertForSequenceClassification.from_pretrained(temp_output,num_labels=config.num_labels).to(config.device)
+    #     # return merged_model 
+            
     except Exception as e:
         print(f"  ✗ Merge failed: {e}")
         import traceback
@@ -672,7 +692,7 @@ theta_base_model = BertForSequenceClassification.from_pretrained(
 ).to(config.device)
 
 # Save base model parameters
-theta_base = {name: param.clone().detach() for name, param in theta_base_model.named_parameters()}
+theta_base = {name: param.clone().detach().to(config.device)  for name, param in theta_base_model.named_parameters()}
 print(f"Base model loaded: {config.model_name}")
 print(f"Number of parameters: {sum(p.numel() for p in theta_base_model.parameters()):,}")
 print(f"Trainable parameters: {sum(p.numel() for p in theta_base_model.parameters() if p.requires_grad):,}")
@@ -767,7 +787,7 @@ print(f"\nLast layer parameter distance ||θ_exp - θ_base||: {param_distance:.4
 Expert model intialising and directory creation
 """
 # Save expert model parameters (for linear/quadratic interpolation)
-theta_exp = {name: param.clone().detach() for name, param in theta_exp_model.named_parameters()}
+theta_exp = {name: param.clone().detach().to(config.device) for name, param in theta_exp_model.named_parameters()}
 
 # NEW: Save as complete model directory (for mergekit)
 expert_model_dir = os.path.join(output_dir, 'expert_model')
@@ -808,7 +828,7 @@ for k, lambda_k in enumerate(config.lambdas):
     for name in theta_base_last.keys():
         diff = theta_k_model.state_dict()[name] - theta_exp_last[name]
         direction.append(diff.flatten())
-    direction = torch.cat(direction)
+    direction = torch.cat(direction).to(config.device)
     direction_norm = torch.norm(direction).item()
     print(f"Last layer direction norm ||θ_k_last - θ_exp_last||: {direction_norm:.4f}")
     
@@ -824,6 +844,11 @@ for k, lambda_k in enumerate(config.lambdas):
         input_ids = batch['input_ids'].to(config.device)
         attention_mask = batch['attention_mask'].to(config.device)
         labels = batch['labels'].to(config.device)
+        
+        # print("num_labels:", theta_k_model.num_labels)
+        # print("labels dtype:", labels.dtype, "device:", labels.device, "shape:", labels.shape)
+        # print("labels min/max:", labels.min().item(), labels.max().item())
+        # print("unique labels (sample):", labels.unique()[:20])
         
         batch_size_actual = input_ids.size(0)
         
