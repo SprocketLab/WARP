@@ -3,3 +3,5 @@ sample_hacking_*
 *.json
 */
 merge.ipynb
+*.npy
+*.pt
