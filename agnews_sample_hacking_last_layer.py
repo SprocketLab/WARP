@@ -18,6 +18,7 @@ import tempfile
 import sys
 import yaml 
 import shutil
+from collections import Counter
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -95,7 +96,7 @@ print(f"STEP 1: Loading the {config.dataset} Dataset")
 print("="*70)
 dataset = load_dataset(config.dataset)
 train_data = dataset['train']
-print(f"Full AG News training set size: {len(train_data)}")
+print(f"Full training set size: {len(train_data)}")
 
 # Show all features/fields
 print("Dataset features: " +  str(train_data.features))
@@ -119,10 +120,11 @@ if len(valid_indices) < config.n_total:
 
 # Create subset D of size n_total
 # D contains the indices wrt to the original dataset
-# indices_D contain the indices wrt the original training dataset
+# indices_D contain the indices wrt the original training dataset for the select seed dataset
+# we do it randomly as we want the select seed dataset to represent the original training corpus well
 indices_D = random.sample(valid_indices, config.n_total)
-D = train_data.select(indices_D)
 print(f"Selected subset D with {config.n_total} samples")
+D = train_data.select(indices_D)
 
 
 
@@ -138,31 +140,62 @@ if abs(sum(config.proportionArr) - 1.0) > epsilon:
     print(f"Sum of proportions should be 1, got {sum(config.proportionArr)}")
     exit(1)
     
+# indices of the finetuning dataset
 indices_D_prime = []
-data_labels = list(D.to_pandas()['label'])
 
-# labels_set = set(data_labels)
-# print("labels set: " + str(labels_set))
 
-label_indices = {label: [] for label in range(config.num_labels)}
-for idx, label in enumerate(data_labels):
-    if label in label_indices: 
-        label_indices[label].append(idx)
+# is there direct correspondence between label i and index i in proportion array ?? - yes!
+# this would be a probem if we dont geenrae experients that cover from a partcualr min to a particualr max 
 
-# print("dictionary for label_indices: " + str(label_indices.keys()) )
 
-for label in range(config.num_labels):
-    proportion = config.proportionArr[label]
-    available = len(label_indices[label])
-    samples_needed = int(np.ceil(proportion * config.n_finetune))
-    print(f"Label {label}....samples needed {samples_needed}.....needed proportion: {proportion}....actual proportion: {samples_needed/config.n_finetune}")
-    if(samples_needed>available):
-        print(f"Datapoints for class {label} are less. Pls lessen the proportion")
-        exit(1)
+
+# here the fientunign set is wrt the select seed dataset  (D) , not within the valid indices
+if(config.finetuning_source == "select"):
+    # labels_set = set(data_labels)
+    # print("labels set: " + str(labels_set))
+    labels_indices = {label: [] for label in range(config.num_labels)}
+    for idx in indices_D:
+        labels_indices[train_data[idx]['label']].append(idx)
+
+    # print("dictionary for label_indices: " + str(label_indices.keys()) )
+
+    for label in range(config.num_labels):
+        proportion = config.proportionArr[label]
+        available = len(labels_indices[label])
+        samples_needed = int(np.ceil(proportion * config.n_finetune))
+        print(f"Label {label}....samples needed {samples_needed}.....needed proportion: {proportion}....actual proportion: {samples_needed/config.n_finetune}")
+        if(samples_needed>available):
+            print(f"Datapoints for class {label} are less. Pls lessen the proportion")
+            exit(1)
+        
+        label_indices_label = labels_indices[label]
+        random.shuffle(label_indices_label)
+        indices_D_prime.extend(label_indices_label[:samples_needed])
+
+
+# here the fientunign set is wrt the valid indices, not  wrt the select seed dataset (D)
+elif (config.finetuning_source == "original"):
+    labels_indices = {label: [] for label in range(config.num_labels)}
+    for idx in valid_indices:
+        labels_indices[train_data[idx]['label']].append(idx)
     
-    label_indices_label = label_indices[label]
-    random.shuffle(label_indices_label)
-    indices_D_prime.extend(label_indices_label[:samples_needed])
+    for label_idx in range(config.num_labels):
+        print("Label idx: " + str(label_idx))
+        proportion_needed = config.proportionArr[label_idx]
+        datapoints_needed = int(proportion_needed*config.n_finetune)
+        print(datapoints_needed)
+        if(datapoints_needed>len(labels_indices[label_idx])):
+            print(f"Datapoints for class {label_idx} are less. Pls lessen the proportion")
+            exit(1)
+            
+        label_indices = labels_indices[label_idx]
+        random.shuffle(label_indices)
+        label_indices = label_indices[:datapoints_needed]
+        indices_D_prime.extend(label_indices)
+        
+    random.shuffle(indices_D_prime)
+    
+    
     
 # we care that our final_arr is to the appropriate size
 # we randomly remove the extra points. There will be always equal or extra points since we are using np.ceil
@@ -173,30 +206,19 @@ if(len(indices_D_prime)>config.n_finetune):
     # to cover the edge case of random choosing two points with the same value
     random_indices = random.sample(range(0,len(indices_D_prime)),len(indices_D_prime)-config.n_finetune)
     indices_D_prime = [indices_D_prime[i] for i in range(len(indices_D_prime)) if i not in random_indices]
-    
-# select the indices_D_prime from D in such a way that class labels are balanced
 
-# Create fine-tuning subset D' of size n_finetune form D
-# D' contains the indices wrt D
-# indices_D_prime = random.sample(range(config.n_total), config.n_finetune)
 
 print(f"Fine-tuning set expected size: {config.n_finetune}")
 print(f"Size of the fixed/updated finetuning set: {len(indices_D_prime)} ")
 
 # getting the fientuning dataset wrt the original training dataset
-D_prime_global_indices = [indices_D[i] for i in indices_D_prime]
-print(f"Selected fine-tuning subset D' with {config.n_finetune} samples")
-
-# Create indicator vector I (this vector creates a true_y label for every datapoint in D)
-I = np.zeros(config.n_total, dtype=int)
-I[indices_D_prime] = 1
+# D_prime_global_indices = [indices_D[i] for i in indices_D_prime]
+# print(f"Selected fine-tuning subset D' with {config.n_finetune} samples")
 
 print(f"\nDataset Statistics:")
 print(f"  Total samples |D|: {config.n_total}")
 print(f"  Fine-tuning samples |D'|: {config.n_finetune}")
 print(f"  Ratio |D'|/|D|: {config.n_finetune/config.n_total:.2%}")
-print(f"  Indicator vector sum: {I.sum()}")
-print(f"  Positive class ratio: {I.mean():.2%}")
 
 # Save dataset info
 dataset_info = {
@@ -204,8 +226,6 @@ dataset_info = {
     'n_finetune': config.n_finetune,
     'indices_D': indices_D,   # indices of select seed dataset
     'indices_D_prime': indices_D_prime,  # indices of fine-tuning dataset
-    'indicator_vector': I.tolist(),
-    'dataset': data_labels
 }
 with open(os.path.join(output_dir, 'dataset_info.json'), 'w') as f:
     json.dump(dataset_info, f, indent=2)
@@ -249,12 +269,13 @@ class ExperimentDataset(Dataset):
         }
 
 # Create datasets (for the subset and fine-tuning subset)
+D_original = ExperimentDataset(train_data, tokenizer, config.max_length)
 D_dataset = ExperimentDataset(D, tokenizer, config.max_length)
-D_prime_dataset = Subset(D_dataset, indices_D_prime)
+D_prime_dataset = ExperimentDataset(train_data.select(indices_D_prime), tokenizer,config.max_length)
 
 # DataLoaders
 D_loader = DataLoader(D_dataset, batch_size=config.batch_size, shuffle=False)
-D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuffle=True)
+D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuffle=False )
 # shuffling the fientunign set since random.sample returns the indexes in the sorted format..
 # and the dataset itself might not be shuffled..so thats why shufflfing those points. The points
 # remain the same but their distributiona cross any factor eg class is much more uniform. 
@@ -263,12 +284,15 @@ D_prime_loader = DataLoader(D_prime_dataset, batch_size=config.batch_size, shuff
 # the eval set is the same for any caller calling the eval function
 def eval(model,device):
     model.eval()
-    correct_pred = 0
+    correct_pred = 0.0
     
     with torch.no_grad():
-        no_of_eval_datapoints = min(1000,len(D_dataset))
-        for i in range(no_of_eval_datapoints):
-            data = D_dataset[i]
+        # Get 5000 random indices
+        no_of_eval_datapoints = 5000
+        total_samples = len(train_data)
+        random_indices = random.sample(range(total_samples), no_of_eval_datapoints)
+        for i in random_indices:
+            data = D_original[i]
             # unsqueeze is more compatible with CUDA
             input_ids = input_ids = data['input_ids'].to(device).unsqueeze(0)  
             attention_mask = data['attention_mask'].to(device).unsqueeze(0)
@@ -278,7 +302,7 @@ def eval(model,device):
             # Compare prediction with true label
             if predictions.item() == label.item():
                 correct_pred += 1
-    return float(correct_pred/len(D_dataset))
+    return correct_pred/no_of_eval_datapoints
     
     
 # Training function
@@ -907,13 +931,6 @@ for interpolation_name in config.interpolations:
         print(f"  Min:  {col_scores.min():.6f}")
         print(f"  Max:  {col_scores.max():.6f}")
         
-        # Compare alignment scores for samples in D' vs not in D'
-        scores_in_D_prime = col_scores[I == 1]
-        scores_not_in_D_prime = col_scores[I == 0]
-        print(f"  Mean (in D'):     {scores_in_D_prime.mean():.6f}")
-        print(f"  Mean (not in D'): {scores_not_in_D_prime.mean():.6f}")
-        print(f"  Difference:       {scores_in_D_prime.mean() - scores_not_in_D_prime.mean():.6f}")
-        
         # deleting the current model and emptying cache
         del theta_k_model
         torch.cuda.empty_cache()
@@ -929,27 +946,22 @@ for interpolation_name in config.interpolations:
     print(f"  Global Max:  {M.max():.6f}")
 
 
-    alignment_matrix_dir = f"{config['dataset']}_{interpolation_name}_{config['proportionArr']}"
+    alignment_matrix_dir = f"{config.dataset}_{interpolation_name}_{config.proportionArr}"
     # Save alignment matrix
     os.makedirs(alignment_matrix_dir, exist_ok=True)
-    np.save(os.path.join(alignment_matrix_dir , 'alignment_matrix_M.npy'), M)
-    print(f"✓ Alignment matrix M saved to {alignment_matrix_dir}/alignment_matrix_M.npy")
+    np.save(os.path.join(alignment_matrix_dir , f'alignment_matrix_{interpolation_name}.npy'), M)
+    print(f"✓ Alignment matrix M saved to {alignment_matrix_dir}/alignment_matrix_{interpolation_name}.npy")
 
     # Save detailed statistics per lambda
     lambda_stats = []
     for k, lambda_k in enumerate(config.lambdas):
         col_scores = M[:, k]
-        scores_in = col_scores[I == 1]
-        scores_out = col_scores[I == 0]
         lambda_stats.append({
             'lambda': float(lambda_k),
             'mean': float(col_scores.mean()),
             'std': float(col_scores.std()),
             'min': float(col_scores.min()),
-            'max': float(col_scores.max()),
-            'mean_in_D_prime': float(scores_in.mean()),
-            'mean_not_in_D_prime': float(scores_out.mean()),
-            'difference': float(scores_in.mean() - scores_out.mean())
+            'max': float(col_scores.max())
         })
 
     with open(os.path.join(alignment_matrix_dir, 'lambda_statistics.json'), 'w') as f:
@@ -1012,3 +1024,128 @@ print(f"  8. predictions.json - Predictions and probabilities")
 print("\n" + "="*70)
 print("Sample-Level Hacking Reverse Engineering Complete!")
 print("="*70) 
+
+
+
+
+
+
+
+
+# for interpolation_name in config.interpolations:
+#     print("\n" + "="*70)
+#     print("STEP 4: Computing Alignment Matrix M (OPTIMIZED)")
+#     print("="*70)
+#     print(f"Configuration:")
+#     print(f"Interpolation: {interpolation_name}")
+#     print(f"  Number of interpolated models (K): {config.K}")
+#     print(f"  Lambda values: {config.lambdas}")
+
+#     # Initialize alignment matrix M: N x K
+#     M = np.zeros((config.n_total, config.K))
+
+#     # ============================================
+#     # For each pseudo-expert k
+#     # ============================================
+#     for k, lambda_k in enumerate(config.lambdas):
+#         print(f"\n{'-'*70}")
+#         print(f"Pseudo-Expert {k+1}/{config.K} (λ={lambda_k:.2f})")
+#         print(f"{'-'*70}")
+
+#         # Load or create interpolated model
+#         if interpolation_name != 'model_baseline':
+#             theta_k_model = get_interpolated_model(lambda_k, interpolation_name)
+#         else:
+#             theta_k_model = torch.load(f'./{output_dir}/model_{k}.pt', weights_only=False)
+        
+#         # ============================================
+#         # Compute direction vector (d,)
+#         # ============================================
+#         direction = []
+#         for name in theta_base_last.keys():
+#             diff = theta_k_model.state_dict()[name] - theta_exp_last[name]
+#             direction.append(diff.flatten())
+#         direction = torch.cat(direction).to(config.device)  # (d,)
+#         direction_norm = torch.norm(direction).item()
+#         print(f"Direction norm: {direction_norm:.4f}")
+        
+#         # ============================================
+#         # Compute sample gradients for ALL N samples
+#         # (Unfortunately sequential, but we collect them)
+#         # ============================================
+#         theta_k_model.eval()
+#         sample_gradients = []  # Will become (N, d)
+        
+#         print(f"Computing gradients for {config.n_total} samples...")
+#         for batch in tqdm(D_loader, desc=f"Processing batches"):
+#             input_ids = batch['input_ids'].to(config.device)
+#             attention_mask = batch['attention_mask'].to(config.device)
+#             labels = batch['labels'].to(config.device)
+            
+#             batch_size_actual = input_ids.size(0)
+            
+#             # Compute per-sample gradients (sequential)
+#             for i in range(batch_size_actual):
+#                 theta_k_model.zero_grad()
+                
+#                 outputs = theta_k_model(
+#                     input_ids=input_ids[i:i+1],
+#                     attention_mask=attention_mask[i:i+1],
+#                     labels=labels[i:i+1]
+#                 )
+#                 loss = outputs.loss
+#                 loss.backward()
+                
+#                 # Extract last layer gradient
+#                 grad_i = extract_last_layer_gradient(theta_k_model)
+                
+#                 if grad_i is None:
+#                     # Zero gradient for failed samples
+#                     grad_i = torch.zeros_like(direction)
+                
+#                 sample_gradients.append(grad_i)  # Keep on GPU!
+        
+#         # ============================================
+#         # VECTORIZED: Single matrix multiplication
+#         # ============================================
+#         # Stack gradients: (N, d)
+#         G = torch.stack(sample_gradients)  # (N, d)
+#         print(f"✓ Gradient matrix shape: {G.shape}")
+        
+#         # Matrix multiply: (N, d) @ (d,) = (N,)
+#         alignment_scores = torch.matmul(G, direction) / direction_norm  # (N,)
+        
+#         # Normalize scores
+#         alignment_scores = alignment_scores / alignment_scores.max()
+        
+#         # Store in M (convert to CPU/numpy only once)
+#         M[:, k] = alignment_scores.detach().cpu().numpy()
+        
+#         # Print statistics
+#         col_scores = M[:, k]
+#         print(f"\nAlignment scores for λ={lambda_k:.2f}:")
+#         print(f"  Mean: {col_scores.mean():.6f}")
+#         print(f"  Std:  {col_scores.std():.6f}")
+#         print(f"  Min:  {col_scores.min():.6f}")
+#         print(f"  Max:  {col_scores.max():.6f}")
+        
+#         # Compare D' vs not D'
+#         scores_in_D_prime = col_scores[I == 1]
+#         scores_not_in_D_prime = col_scores[I == 0]
+#         print(f"  Mean (in D'):     {scores_in_D_prime.mean():.6f}")
+#         print(f"  Mean (not in D'): {scores_not_in_D_prime.mean():.6f}")
+#         print(f"  Difference:       {scores_in_D_prime.mean() - scores_not_in_D_prime.mean():.6f}")
+        
+#         # Cleanup
+#         del theta_k_model, G, sample_gradients, alignment_scores
+#         torch.cuda.empty_cache()
+
+#     print("\n" + "="*70)
+#     print("Alignment Matrix M Complete!")
+#     print("="*70)
+    
+#     # Save results
+#     alignment_matrix_dir = f"{config.dataset}_{interpolation_name}_{config.proportionArr}"
+#     os.makedirs(alignment_matrix_dir, exist_ok=True)
+#     np.save(os.path.join(alignment_matrix_dir, 'alignment_matrix_M.npy'), M)
+#     print(f"✓ Saved to {alignment_matrix_dir}/alignment_matrix_M.npy")
