@@ -912,7 +912,7 @@ for interpolation_name in config.interpolations:
         # applying softmax per pseudoexpert 
         # alignment_scores = torch.softmax(torch.tensor(alignment_scores),dim=0)
         alignment_scores = torch.tensor(alignment_scores, dtype=torch.float32)
-        alignment_scores = alignment_scores / alignment_scores.max() 
+        # alignment_scores = alignment_scores / alignment_scores.max() 
         # print(f"Softmax alignment scores: {alignment_scores}")
         
         for i in range(sample_idx):
