@@ -31,7 +31,7 @@ except ImportError as e:
 
 class Model:
     
-    def __init__(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name):
+    def __init__(self,tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name):
         self.tokenizer = tokenizer
         self.base_model_path = base_model_path 
         self.expert_model_path = expert_model_path
@@ -174,6 +174,7 @@ class Model:
 
 
     def merge_with_mergekit(
+        self,
         base_model_path: str,
         expert_model_path: str,
         method: str,
@@ -214,13 +215,13 @@ class Model:
         try:
             # Create appropriate config
             if method == 'slerp':
-                config_path = create_slerp_config(
+                config_path = self.create_slerp_config(
                     base_model_path, expert_model_path, lambda_k, temp_output
                 )
             
             elif method == 'ties':
                 density = kwargs.get('density', 0.9)
-                config_path = create_ties_config(
+                config_path = self.create_ties_config(
                     base_model_path, expert_model_path, lambda_k, density, temp_output
                 )
             
@@ -228,7 +229,7 @@ class Model:
                 density = kwargs.get('density', 0.9)
                 epsilon = kwargs.get('epsilon', 1e-8)
                 rescale = kwargs.get('rescale', True)
-                config_path = create_della_config(
+                config_path = self.create_della_config(
                     base_model_path, expert_model_path, lambda_k, 
                     density, epsilon, rescale, temp_output
                 )
@@ -306,7 +307,7 @@ class Model:
 
 
 
-    def quadratic_interpolation_weight(lambda_val, curve_param=0.3):
+    def quadratic_interpolation_weight(self,lambda_val, curve_param=0.3):
         """
         Convert lambda to quadratic interpolation weight
         
@@ -326,7 +327,7 @@ class Model:
 
 
 
-    def get_interpolated_model(lambda_k,interpolation_name,theta_base,theta_exp):
+    def get_interpolated_model(self,lambda_k,interpolation_name,theta_base,theta_exp):
         print(f"\n{'-'*70}")
         print(f"Interpolated Model (λ={lambda_k:.2f})")
         print(f"{'-'*70}")
@@ -350,12 +351,12 @@ class Model:
             return theta_k_model
         
         elif(interpolation_name=='quadratic'):
-            quad_interpolation = quadratic_interpolation_weight(lambda_k, curve_param=0.3)
+            quad_interpolation = self.quadratic_interpolation_weight(lambda_k, curve_param=0.3)
             with torch.no_grad():
                 for name, param in theta_k_model.named_parameters():
                     param.copy_((1 - quad_interpolation) * theta_base[name] + quad_interpolation * theta_exp[name])
             return theta_k_model
         
         else: 
-            return merge_with_mergekit(self.base_model_path,self.expert_model_path,interpolation_name,lambda_k)
+            return self.merge_with_mergekit(self.base_model_path,self.expert_model_path,interpolation_name,lambda_k)
 

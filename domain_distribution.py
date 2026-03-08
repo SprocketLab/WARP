@@ -56,9 +56,8 @@ Getting the parameters
 batch_size = config.batch_size 
 num_labels = config.num_labels
 max_length = config.max_length
-epochs = config.epochs
+epochs = config.num_epochs
 finetuning_source = config.finetuning_source
-model_name = config.model_name
 learning_rate = config.learning_rate
 device = config.device
 optimizer_name = config.optimizer
@@ -66,7 +65,7 @@ no_of_pseudoexperts = config.K
 model_name = config.model_name
 output_dir = config.experiment_name
 num_labels = config.num_labels
-dataset_name = config.dataset_name
+dataset_name = config.dataset
 n_seed = config.n_total 
 n_finetune = config.n_finetune 
 proportionArr = config.proportionArr
@@ -128,7 +127,7 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 """
 initializign and finetuning the base model
 """
-f1 = Finetuning(learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, train_data)
+f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, train_data)
 
 base_model = BertForSequenceClassification.from_pretrained(
     config.model_name, 
@@ -140,7 +139,8 @@ exp_model = BertForSequenceClassification.from_pretrained(
     num_labels=config.num_labels
 ).to(config.device)
         
-f1.finetune_base(exp_model,output_dir,)
+eval_size = 5000
+f1.finetune_base(exp_model,output_dir,eval_size)
 
 
 """

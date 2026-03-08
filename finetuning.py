@@ -11,7 +11,7 @@ import random
 
 class Finetuning: 
     
-    def __init__(learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts,superset_eval_set):
+    def __init__(self,n_finetune, learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts,superset_eval_set):
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.epochs = epochs
@@ -20,10 +20,11 @@ class Finetuning:
         self.device = device
         self.no_of_pseudoexperts = no_of_pseudoexperts
         self.eval_set = superset_eval_set
+        self.n_finetune = n_finetune
     
 
     # Training function
-    def train_model(model, output_dir,eval_size,optimizer):
+    def train_model(self,model, output_dir,eval_size,optimizer):
         accuracy_arr = []
         model.train()
         batch_interval = round((self.epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
@@ -75,7 +76,7 @@ class Finetuning:
         return accuracy_arr
     
     
-    def eval(model,device,eval_size):
+    def eval(self,model,device,eval_size):
         model.eval()
         correct_pred = 0.0
         
@@ -101,7 +102,7 @@ class Finetuning:
     """
     Fine-tuning the base model
     """
-    def finetune_base(theta_exp_model,output_dir,eval_size):
+    def finetune_base(self,theta_exp_model,output_dir,eval_size):
         # Fine-tune on D' to get expert model
         print("\n" + "="*70)
         print("STEP 3: Fine-tuning on D' to Create Expert Model (θ_exp)")
@@ -117,11 +118,11 @@ class Finetuning:
         print(f"Fine-tuning configuration:")
         print(f"  Learning rate: {self.learning_rate}")
         print(f"  Batch size: {self.batch_size}")
-        print(f"  Epochs: {self.num_epochs}")
+        print(f"  Epochs: {self.epochs}")
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
 
-        accuracy_arr = train_model(theta_exp_model,output_dir,eval_size,optimizer)
+        accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer)
 
         with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
             pickle.dump(accuracy_arr, f)    

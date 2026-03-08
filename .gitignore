@@ -8,3 +8,4 @@ merge.ipynb
 *.npy
 *.pt
 /.ipynb_checkpoints
+/__pycache__
