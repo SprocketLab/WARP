@@ -3,7 +3,7 @@ import torch
 import tqdm
 import json
 import os
-
+from models import Model
 
 class Alignment:
     

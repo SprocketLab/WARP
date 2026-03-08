@@ -357,5 +357,5 @@ class Model:
             return theta_k_model
         
         else: 
-            return merge_with_mergekit(base_model_path,expert_model_path,interpolation_name,lambda_k)
+            return merge_with_mergekit(self.base_model_path,self.expert_model_path,interpolation_name,lambda_k)
 

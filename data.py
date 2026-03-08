@@ -16,7 +16,7 @@ import torch
 
 class Dataset:
     
-    def __init(dataset_name,n_seed,n_finetune,proportion_arr,num_labels):
+    def __init(tokenizer,dataset_name,n_seed,n_finetune,proportion_arr,num_labels):
         self.dataset  = load_dataset(dataset_name)
         self.train_dataset = self.dataset['train']
         self.n_orig_train = len(self.train_dataset)
@@ -38,7 +38,7 @@ class Dataset:
                 valid_indices.append(idx)
         return valid_indices
                 
-    def select_seed_indices(valid_indices):
+    def get_select_seed_indices(valid_indices):
         # Check if we have enough valid samples
         if len(valid_indices) < self.n_seed :
             print(f"ERROR: Not enough valid samples!")
@@ -171,13 +171,13 @@ class Dataset:
         # shuffling the fientunign set since random.sample returns the indexes in the sorted format..
     # and the dataset itself might not be shuffled..so thats why shufflfing those points. The points
     # remain the same but their distributiona cross any factor eg class is much more uniform. 
-    def get_finetuning_dataloader(indices_D_prime,batch_size,max_length,tokenizer):
-        D_prime_dataset = self.ExperimentDataset(self.train_data.select(indices_D_prime), tokenizer,max_length)
+    def get_finetuning_dataloader(indices_D_prime,batch_size,max_length):
+        D_prime_dataset = self.ExperimentDataset(self.train_data.select(indices_D_prime), self.tokenizer,max_length)
         D_prime_loader = DataLoader(D_prime_dataset, batch_size=batch_size, shuffle=False )
         return D_prime_loader
     
-    def get_selectseed_dataloader(indices_D,batch_size,max_length,tokenizer):
-        D_dataset = self.ExperimentDataset(self.train_data.select(indices_D), tokenizer, max_length)
+    def get_selectseed_dataloader(indices_D,batch_size,max_length):
+        D_dataset = self.ExperimentDataset(self.train_data.select(indices_D), self.tokenizer, max_length)
         D_loader = DataLoader(D_dataset, batch_size=batch_size, shuffle=False)
         return D_loader
         
