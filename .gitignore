@@ -1,7 +1,9 @@
 sample_hacking_*
 *.pkl
 *.json
-*/
+/results_*
+/kfold_models
+/mergekit
 merge.ipynb
 *.npy
 *.pt
