@@ -3,12 +3,12 @@ import torch
 import tqdm
 import json
 import os
-
+from models import Model
 
 class Alignment:
     
     # suually the data valeus whcih determine the experiment, outline the experiment
-    def __init__(n_seed, no_of_pseudopexperts, lambdas, seed_dataset_loader, dataset_name, proportion_arr, base_model, expert_model, device):
+    def __init__(self,n_seed, no_of_pseudopexperts, lambdas, seed_dataset_loader, dataset_name, proportion_arr, base_model, expert_model, device):
         self.n_seed = n_seed
         self.no_of_pseudoexperts = no_of_pseudopexperts
         self.lambdas = lambdas
@@ -16,12 +16,12 @@ class Alignment:
         self.dataset_name = dataset_name
         self.proportion_arr = proportion_arr
         self.base_model = base_model
-        self.expert_model = expert_model
+        self.exp_model = expert_model
         self.device = device
         
         
     
-    def extract_last_layer_gradient(model):
+    def extract_last_layer_gradient(self,model):
         grad = []
         for name, param in model.named_parameters():
             if 'classifier' in name and param.grad is not None:
@@ -33,7 +33,7 @@ class Alignment:
     
     
     
-    def get_last_layer_params(model):
+    def get_last_layer_params(self,model):
         """Extract only the classifier (last layer) parameters"""
         # ToDo: check if all lastlayer params have "classifier" in name
         # For BERT, the classifier is model.classifier
@@ -47,10 +47,10 @@ class Alignment:
     
     
 
-    def generate_alignment_matrix(interpolation_name,input_dir):    
+    def generate_alignment_matrix(self,interpolation_name,input_dir):    
             
-        theta_base_last = get_last_layer_params(self.theta_base_model)
-        theta_exp_last = get_last_layer_params(self.theta_exp_model)
+        theta_base_last = self.get_last_layer_params(self.base_model)
+        theta_exp_last = self.get_last_layer_params(self.exp_model)
         
         
         """
@@ -72,7 +72,7 @@ class Alignment:
         for k, lambda_k in enumerate(self.lambdas):
 
             if(interpolation_name!='model_baseline'):
-                theta_k_model = get_interpolated_model(lambda_k,interpolation_name)
+                theta_k_model = self.get_interpolated_model(lambda_k,interpolation_name)
             else:
                 theta_k_model = torch.load(f'./{input_dir}/model_{k}.pt',weights_only=False)
             
@@ -122,7 +122,7 @@ class Alignment:
                     loss.backward()
                     
                     # Extract ONLY LAST LAYER gradient g_i^k
-                    grad_i = extract_last_layer_gradient(theta_k_model)
+                    grad_i = self.extract_last_layer_gradient(theta_k_model)
                     
                     if grad_i is None:
                         # M[sample_idx, k] = 0.0
@@ -176,7 +176,7 @@ class Alignment:
         print(f"  Global Max:  {M.max():.6f}")
 
 
-        alignment_matrix_dir = f"{self.dataset}_{interpolation_name}_{self.proportionArr}"
+        alignment_matrix_dir = f"{self.dataset_name}_{interpolation_name}_{self.proportion_arr}"
         # Save alignment matrix
         os.makedirs(alignment_matrix_dir, exist_ok=True)
         np.save(os.path.join(alignment_matrix_dir , f'alignment_matrix_{interpolation_name}.npy'), M)
