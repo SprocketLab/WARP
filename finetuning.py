@@ -5,12 +5,13 @@ from torch.optim import AdamW,SGD
 import pickle
 from transformers import BertTokenizer, BertForSequenceClassification
 from tqdm import tqdm
+import random
 
 
 
 class Finetuning: 
     
-    def __init__(learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts):
+    def __init__(learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts,superset_eval_set):
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.epochs = epochs
@@ -18,10 +19,11 @@ class Finetuning:
         self.finetuning_data_loader = finetuning_loader
         self.device = device
         self.no_of_pseudoexperts = no_of_pseudoexperts
+        self.eval_set = superset_eval_set
     
 
     # Training function
-    def train_model(model, output_dir):
+    def train_model(model, output_dir,eval_size):
         accuracy_arr = []
         model.train()
         batch_interval = round((self.epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
@@ -62,7 +64,7 @@ class Finetuning:
                     print("current model number: " + str(num_model))
                     print("current batch: " + str(num_batch))
                     torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-                    eval_accuracy = eval(model,self.device)
+                    eval_accuracy = eval(model,self.device,eval_size)
                     print(f"Eval accuracy: {eval_accuracy}")
                     accuracy_arr.append(eval_accuracy)
                     model.train()
@@ -73,7 +75,27 @@ class Finetuning:
         return accuracy_arr
     
     
-    
+    def eval(model,device,eval_size):
+        model.eval()
+        correct_pred = 0.0
+        
+        with torch.no_grad():
+            # Get 5000 random indices
+            no_of_eval_datapoints = eval_size
+            total_samples = len(self.eval_set)
+            random_indices = random.sample(range(total_samples), no_of_eval_datapoints)
+            for i in random_indices:
+                data = self.eval_set[i]
+                # unsqueeze is more compatible with CUDA
+                input_ids = input_ids = data['input_ids'].to(device).unsqueeze(0)  
+                attention_mask = data['attention_mask'].to(device).unsqueeze(0)
+                label = data['labels'].to(device)
+                outputs = model(input_ids,attention_mask)
+                predictions = torch.argmax(torch.softmax(outputs.logits, dim=-1))
+                # Compare prediction with true label
+                if predictions.item() == label.item():
+                    correct_pred += 1
+        return correct_pred/no_of_eval_datapoints  
     
 
     """

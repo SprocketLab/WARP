@@ -9,6 +9,7 @@ from models import Model
 import json
 from transformers import BertTokenizer, BertForSequenceClassification
 import os 
+from datasets import load_dataset
 
 
 """
@@ -93,7 +94,12 @@ print(f"{'='*70}\n")
 """
 Get the dataloaders
 """
-d1 = Dataset(tokenizer,dataset_name,n_seed,n_finetune,proportionArr,num_labels)
+
+dataset  = load_dataset(dataset_name)
+train_data = dataset['train']
+print(f"Full training set size: {len(train_data)}")
+
+d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels)
 valid_indices = d1.get_valid_indices()
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
 finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
@@ -104,9 +110,25 @@ seed_dataset_dataloader = d1.get_selectseed_dataloader(finetuned_indices ,batch_
 
 
 """
+Save the dataset_info
+"""
+dataset_info = {
+    'n_total': n_seed ,
+    'n_finetune': n_finetune,
+    'indices_D': select_seed_indices,   # indices of select seed dataset
+    'indices_D_prime': finetuned_indices,  # indices of fine-tuning dataset
+}
+with open(os.path.join(output_dir, 'dataset_info.json'), 'w') as f:
+    json.dump(dataset_info, f, indent=2)
+print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
+
+
+
+
+"""
 initializign and finetuning the base model
 """
-f1 = Finetuning(learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts)
+f1 = Finetuning(learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, train_data)
 
 base_model = BertForSequenceClassification.from_pretrained(
     config.model_name, 
@@ -129,3 +151,27 @@ m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,devic
 
 for interpolation_name in config.interpolations:
     a1.generate_alignment_matrix(interpolation_name,output_dir)
+    
+    
+"""
+Cleaning up the directory files
+"""
+for filename in os.listdir(output_dir):
+    file_path = os.path.join(output_dir, filename)
+    if os.path.isfile(file_path) and ".pt" in filename and "model_" in filename:
+        os.remove(file_path)
+
+print("\n" + "="*70)
+print("EXPERIMENT COMPLETE - Summary")
+print("="*70)
+print(f"\nOutput directory: {output_dir}")
+print(f"\nSaved files:")
+print(f"  1. dataset_info.json - Dataset configuration and indices")
+print(f"  2. theta_base_model.pt - Base model weights")
+print(f"  3. theta_exp_model.pt - Expert model weights")
+print(f"  4. alignment_matrix_M.npy - Alignment matrix (N×K)")
+print(f"  5. lambda_statistics.json - Statistics per interpolation point")
+
+print("\n" + "="*70)
+print("Sample-Level Hacking Reverse Engineering Complete!")
+print("="*70) 

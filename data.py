@@ -7,18 +7,10 @@ from transformers import BertTokenizer, BertForSequenceClassification
 from torch.utils.data import Dataset, DataLoader
 import torch
 
-# you dont want to itniaise evrythginat ocne , since youa re gonan waste compute 
-
-# if we are gonna hve emthod that return argument we need, we many ened to call them , 
-# instead of just specifying in my args right.
-
-# would we apss all the intial arguments in the class ?? 
-
 class Dataset:
     
-    def __init(tokenizer,dataset_name,n_seed,n_finetune,proportion_arr,num_labels):
-        self.dataset  = load_dataset(dataset_name)
-        self.train_dataset = self.dataset['train']
+    def __init__(tokenizer,orig_train_dataset,n_seed,n_finetune,proportion_arr,num_labels):
+        self.train_dataset = orig_train_dataset
         self.n_orig_train = len(self.train_dataset)
         self.n_seed = n_seed
         self.n_finetune = n_finetune
