@@ -140,7 +140,7 @@ exp_model = BertForSequenceClassification.from_pretrained(
     num_labels=config.num_labels
 ).to(config.device)
         
-f1.finetune_base(exp_model,output_dir)
+f1.finetune_base(exp_model,output_dir,)
 
 
 """

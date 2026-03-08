@@ -23,7 +23,7 @@ class Finetuning:
     
 
     # Training function
-    def train_model(model, output_dir,eval_size):
+    def train_model(model, output_dir,eval_size,optimizer):
         accuracy_arr = []
         model.train()
         batch_interval = round((self.epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
@@ -101,7 +101,7 @@ class Finetuning:
     """
     Fine-tuning the base model
     """
-    def finetune_base(theta_exp_model,output_dir):
+    def finetune_base(theta_exp_model,output_dir,eval_size):
         # Fine-tune on D' to get expert model
         print("\n" + "="*70)
         print("STEP 3: Fine-tuning on D' to Create Expert Model (θ_exp)")
@@ -121,7 +121,7 @@ class Finetuning:
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
 
-        accuracy_arr = train_model(theta_exp_model,output_dir)
+        accuracy_arr = train_model(theta_exp_model,output_dir,eval_size,optimizer)
 
         with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
             pickle.dump(accuracy_arr, f)    
