@@ -7,3 +7,4 @@ sample_hacking_*
 merge.ipynb
 *.npy
 *.pt
+/.ipynb_checkpoints
