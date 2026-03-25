@@ -31,13 +31,14 @@ except ImportError as e:
 
 class Model:
     
-    def __init__(self,tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name):
+    def __init__(self,tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels):
         self.tokenizer = tokenizer
         self.base_model_path = base_model_path 
         self.expert_model_path = expert_model_path
         self.no_of_pseudoexperts = no_of_pseudoexperts
         self.device = device
         self.model_name = model_name
+        self.num_labels = num_labels
 
 
     def create_slerp_config(base_model_path: str, expert_model_path: str, t: float, output_path: str) -> str:

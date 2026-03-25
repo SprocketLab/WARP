@@ -1,9 +1,11 @@
 import numpy as np
 import torch
-import tqdm
+from tqdm import tqdm
 import json
 import os
 from models import Model
+from transformers import BertTokenizer, BertForSequenceClassification
+
 
 class Alignment:
     
@@ -17,9 +19,11 @@ class Alignment:
         self.proportion_arr = proportion_arr
         self.base_model = base_model
         self.exp_model = expert_model
-        self.device = device
-        
-        
+        self.device = device        
+        self.theta_base = {name: param.clone().detach().to(self.device)  for name, param in self.base_model.named_parameters()}
+        self.theta_exp = {name: param.clone().detach().to(self.device) for name, param in self.exp_model.named_parameters()}
+
+
     
     def extract_last_layer_gradient(self,model):
         grad = []
@@ -43,11 +47,8 @@ class Alignment:
                 last_layer_params[name] = param
         return last_layer_params
     
-    
-    
-    
 
-    def generate_alignment_matrix(self,interpolation_name,input_dir):    
+    def generate_alignment_matrix(self,interpolation_name,input_dir,interpmodel_instance):    
             
         theta_base_last = self.get_last_layer_params(self.base_model)
         theta_exp_last = self.get_last_layer_params(self.exp_model)
@@ -72,7 +73,7 @@ class Alignment:
         for k, lambda_k in enumerate(self.lambdas):
 
             if(interpolation_name!='model_baseline'):
-                theta_k_model = self.get_interpolated_model(lambda_k,interpolation_name)
+                theta_k_model = interpmodel_instance.get_interpolated_model(lambda_k,interpolation_name,self.theta_base,self.theta_exp)
             else:
                 theta_k_model = torch.load(f'./{input_dir}/model_{k}.pt',weights_only=False)
             

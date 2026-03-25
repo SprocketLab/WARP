@@ -22,7 +22,32 @@ class Finetuning:
         self.eval_set = superset_eval_set
         self.n_finetune = n_finetune
     
-
+    
+    
+    def eval(self,model,device,eval_size):
+        model.eval()
+        correct_pred = 0.0
+        
+        with torch.no_grad():
+            # Get 5000 random indices
+            no_of_eval_datapoints = eval_size
+            total_samples = len(self.eval_set)
+            random_indices = random.sample(range(total_samples), no_of_eval_datapoints)
+            for i in random_indices:
+                data = self.eval_set[i]
+                # unsqueeze is more compatible with CUDA
+                input_ids = data['input_ids'].to(device).unsqueeze(0)  
+                attention_mask = data['attention_mask'].to(device).unsqueeze(0)
+                label = data['labels'].to(device)
+                outputs = model(input_ids,attention_mask)
+                predictions = torch.argmax(torch.softmax(outputs.logits, dim=-1))
+                # Compare prediction with true label
+                if predictions.item() == label.item():
+                    correct_pred += 1
+        return correct_pred/no_of_eval_datapoints  
+    
+    
+    
     # Training function
     def train_model(self,model, output_dir,eval_size,optimizer):
         accuracy_arr = []
@@ -62,9 +87,9 @@ class Finetuning:
                     print("current model number: " + str(num_model))
                     print("current batch: " + str(num_batch))
                     torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-                    eval_accuracy = eval(model,self.device,eval_size)
-                    print(f"Eval accuracy: {eval_accuracy}")
-                    accuracy_arr.append(eval_accuracy)
+                    # eval_accuracy = self.eval(model,self.device,eval_size)
+                    # print(f"Eval accuracy: {eval_accuracy}")
+                    # accuracy_arr.append(eval_accuracy)
                     model.train()
                     num_model+=1
             
@@ -72,28 +97,7 @@ class Finetuning:
             print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
         return accuracy_arr
     
-    
-    def eval(self,model,device,eval_size):
-        model.eval()
-        correct_pred = 0.0
-        
-        with torch.no_grad():
-            # Get 5000 random indices
-            no_of_eval_datapoints = eval_size
-            total_samples = len(self.eval_set)
-            random_indices = random.sample(range(total_samples), no_of_eval_datapoints)
-            for i in random_indices:
-                data = self.eval_set[i]
-                # unsqueeze is more compatible with CUDA
-                input_ids = input_ids = data['input_ids'].to(device).unsqueeze(0)  
-                attention_mask = data['attention_mask'].to(device).unsqueeze(0)
-                label = data['labels'].to(device)
-                outputs = model(input_ids,attention_mask)
-                predictions = torch.argmax(torch.softmax(outputs.logits, dim=-1))
-                # Compare prediction with true label
-                if predictions.item() == label.item():
-                    correct_pred += 1
-        return correct_pred/no_of_eval_datapoints  
+
     
 
     """

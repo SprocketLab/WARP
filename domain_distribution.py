@@ -99,11 +99,17 @@ train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
+
+
 valid_indices = d1.get_valid_indices()
+D_dataset = d1.ExperimentDataset(train_data.select(valid_indices), tokenizer, max_length,dataset_name)
+
+
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
+seed_dataset_dataloader = d1.get_selectseed_dataloader(select_seed_indices ,batch_size,max_length)
+
 finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
-finetuning_dataloader = d1.get_finetuning_dataloader(valid_indices,batch_size,max_length)
-seed_dataset_dataloader = d1.get_selectseed_dataloader(finetuned_indices ,batch_size,max_length)
+finetuning_dataloader = d1.get_finetuning_dataloader(finetuned_indices,batch_size,max_length)
 
 
 
@@ -127,7 +133,7 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 """
 initializign and finetuning the base model
 """
-f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, train_data)
+f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, D_dataset )
 
 base_model = BertForSequenceClassification.from_pretrained(
     config.model_name, 
@@ -142,15 +148,14 @@ exp_model = BertForSequenceClassification.from_pretrained(
 eval_size = 5000
 f1.finetune_base(exp_model,output_dir,eval_size)
 
-
 """
 construct the alignment scores
 """
-a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr, base_model, exp_model, device)
-m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name)
+a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr,base_model,exp_model, device)
+m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels)
 
 for interpolation_name in config.interpolations:
-    a1.generate_alignment_matrix(interpolation_name,output_dir)
+    a1.generate_alignment_matrix(interpolation_name,output_dir,m1)
     
     
 """
