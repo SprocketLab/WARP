@@ -9,7 +9,31 @@ import random
 
 
 
-class Finetuning: 
+class Finetuning:
+    """
+    Manages the fine-tuning process for creating expert models.
+    
+    This class handles the training of a base model on a specialized fine-tuning
+    dataset with controlled class proportions. It also supports saving intermediate
+    model checkpoints (pseudo-experts) during training for alignment computation.
+    
+    The class provides:
+    - Model training with configurable optimizers (Adam, SGD)
+    - Periodic model checkpointing for pseudo-expert generation
+    - Evaluation on a held-out set
+    - Training progress tracking
+    
+    Attributes:
+        learning_rate (float): Learning rate for optimizer
+        batch_size (int): Batch size for training
+        epochs (int): Number of training epochs
+        optimizer (str): Optimizer name ('Adam' or 'SGD')
+        finetuning_data_loader (DataLoader): DataLoader for fine-tuning dataset
+        device (torch.device): Device for computation (CPU or CUDA)
+        no_of_pseudoexperts (int): Number of intermediate models to save
+        eval_set (Dataset): Dataset for evaluation
+        n_finetune (int): Size of fine-tuning dataset
+    """
     
     def __init__(self,n_finetune, learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts,superset_eval_set):
         self.learning_rate = learning_rate
@@ -25,6 +49,22 @@ class Finetuning:
     
     
     def eval(self,model,device,eval_size):
+        """
+        Evaluate model accuracy on a random subset of the evaluation set.
+        
+        Args:
+            model: The model to evaluate
+            device: Device to run evaluation on (CPU or CUDA)
+            eval_size (int): Number of samples to evaluate on
+            
+        Returns:
+            float: Accuracy as a fraction [0, 1]
+            
+        Note:
+            - Model is set to eval mode
+            - Uses random sampling from eval_set for efficiency
+            - No gradient computation (uses torch.no_grad())
+        """
         model.eval()
         correct_pred = 0.0
         
@@ -44,12 +84,40 @@ class Finetuning:
                 # Compare prediction with true label
                 if predictions.item() == label.item():
                     correct_pred += 1
-        return correct_pred/no_of_eval_datapoints  
+        return correct_pred/no_of_eval_datapoints    
     
-    
-    
+
     # Training function
     def train_model(self,model, output_dir,eval_size,optimizer):
+        """
+        Train the model and save intermediate checkpoints as pseudo-experts.
+        
+        This method trains the model on the fine-tuning dataset and periodically
+        saves model checkpoints. The checkpoints are saved at regular intervals
+        determined by dividing the total training batches by (no_of_pseudoexperts + 1).
+        
+        These intermediate models represent points along the fine-tuning trajectory
+        and can be used for alignment computation or as pseudo-experts.
+        
+        Args:
+            model: BERT model to train
+            output_dir (str): Directory to save model checkpoints
+            eval_size (int): Number of samples for evaluation
+            optimizer: PyTorch optimizer (Adam or SGD)
+            
+        Returns:
+            list: Accuracy values at each checkpoint (currently empty)
+            
+        Side Effects:
+            - Saves models as model_0.pt, model_1.pt, ..., model_{K-1}.pt
+            - Prints training progress and loss
+            - Updates model parameters in-place
+            
+        Note:
+            - Checkpoints are saved during training, not at epoch boundaries
+            - The final expert model is not saved here (saved separately)
+            - Batch interval determines checkpoint frequency
+        """
         accuracy_arr = []
         model.train()
         batch_interval = round((self.epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
@@ -104,6 +172,34 @@ class Finetuning:
     Fine-tuning the base model
     """
     def finetune_base(self,theta_exp_model,output_dir,eval_size):
+        """
+        Fine-tune a base model to create an expert model on the specialized dataset.
+        
+        This is the main entry point for the fine-tuning process. It:
+        1. Selects the appropriate optimizer (Adam for adaptive LR, SGD for static)
+        2. Trains the model using train_model()
+        3. Saves intermediate pseudo-expert checkpoints
+        4. Saves accuracy history
+        
+        Args:
+            theta_exp_model (BertForSequenceClassification): Model to fine-tune
+            output_dir (str): Directory to save models and results
+            eval_size (int): Number of samples for evaluation
+            
+        Side Effects:
+            - Modifies theta_exp_model in-place
+            - Saves model checkpoints to output_dir
+            - Saves accuracy_arr.pkl containing evaluation history
+            - Prints training configuration and progress
+            
+        Returns:
+            None
+            
+        Note:
+            - Adam optimizer is used for adaptive learning rates
+            - SGD optimizer is used for static learning rates
+            - All parameters are trainable (no frozen layers)
+        """
         # Fine-tune on D' to get expert model
         print("\n" + "="*70)
         print("STEP 3: Fine-tuning on D' to Create Expert Model (θ_exp)")
@@ -158,3 +254,6 @@ class Finetuning:
 #     param_distance += torch.norm(theta_exp_last[name] - theta_base_last[name]).item() ** 2
 # param_distance = np.sqrt(param_distance)
 # print(f"\nLast layer parameter distance ||θ_exp - θ_base||: {param_distance:.4f}")
+
+
+
