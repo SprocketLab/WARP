@@ -94,8 +94,13 @@ print(f"{'='*70}\n")
 print("="*70)
 print(f"STEP 1: Loading the {config.dataset} Dataset")
 print("="*70)
-# dataset = load_dataset(config.dataset)
-dataset = load_dataset('yelp/yelp_review_full')
+
+if(config.dataset == "yelp_review"):
+    dataset = load_dataset('yelp/yelp_review_full')
+    
+else:
+    dataset = load_dataset(config.dataset)
+    
 train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 

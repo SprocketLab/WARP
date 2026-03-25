@@ -9,7 +9,7 @@ import torch
 
 class Dataset:
     
-    def __init__(self,tokenizer,orig_train_dataset,n_seed,n_finetune,proportion_arr,num_labels):
+    def __init__(self,tokenizer,orig_train_dataset,n_seed,n_finetune,proportion_arr,num_labels,dataset_name):
         self.train_data = orig_train_dataset
         self.n_orig_train = len(self.train_data)
         self.n_seed = n_seed
@@ -17,6 +17,7 @@ class Dataset:
         self.proportion_arr = proportion_arr
         self.num_labels = num_labels
         self.tokenizer = tokenizer
+        self.dataset_name = dataset_name
         
         epsilon = 1e-6  # or 1e-9 for tighter tolerance
         if abs(sum(self.proportion_arr) - 1.0) > epsilon:
@@ -128,19 +129,23 @@ class Dataset:
     
     # Custom Dataset
     class ExperimentDataset(Dataset):
-        def __init__(self, data, tokenizer, max_length):
+        def __init__(self, data, tokenizer, max_length, dataset_name):
             self.data = data
             self.tokenizer = tokenizer
             self.max_length = max_length
+            self.dataset_name = dataset_name
         
         def __len__(self):
             return len(self.data)
         
         def __getitem__(self, idx):
-            # text = self.data[idx]['text']
-            premise = self.data[idx]['premise']
-            hypothesis = self.data[idx]['hypothesis']
-            text = f"Premis: {premise} Hypothesis: {hypothesis}"
+            text = self.data[idx]['text']
+        
+            if(self.dataset_name == "snli"):
+                premise = self.data[idx]['premise']
+                hypothesis = self.data[idx]['hypothesis']
+                text = f"Premis: {premise} Hypothesis: {hypothesis}"
+                
             label = self.data[idx]['label']
             
             encoding = self.tokenizer(
@@ -165,11 +170,11 @@ class Dataset:
     # and the dataset itself might not be shuffled..so thats why shufflfing those points. The points
     # remain the same but their distributiona cross any factor eg class is much more uniform. 
     def get_finetuning_dataloader(self,indices_D_prime,batch_size,max_length):
-        D_prime_dataset = self.ExperimentDataset(self.train_data.select(indices_D_prime), self.tokenizer,max_length)
+        D_prime_dataset = self.ExperimentDataset(self.train_data.select(indices_D_prime), self.tokenizer,max_length,self.dataset_name)
         D_prime_loader = DataLoader(D_prime_dataset, batch_size=batch_size, shuffle=False )
         return D_prime_loader
     
     def get_selectseed_dataloader(self,indices_D,batch_size,max_length):
-        D_dataset = self.ExperimentDataset(self.train_data.select(indices_D), self.tokenizer, max_length)
+        D_dataset = self.ExperimentDataset(self.train_data.select(indices_D), self.tokenizer, max_length,self.dataset_name)
         D_loader = DataLoader(D_dataset, batch_size=batch_size, shuffle=False)
         return D_loader

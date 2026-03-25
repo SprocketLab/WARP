@@ -9,3 +9,4 @@ merge.ipynb
 *.pt
 /.ipynb_checkpoints
 /__pycache__
+/old_*
