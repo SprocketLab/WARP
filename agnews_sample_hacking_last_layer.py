@@ -94,7 +94,13 @@ print(f"{'='*70}\n")
 print("="*70)
 print(f"STEP 1: Loading the {config.dataset} Dataset")
 print("="*70)
-dataset = load_dataset(config.dataset)
+
+if(config.dataset == "yelp_review"):
+    dataset = load_dataset('yelp/yelp_review_full')
+    
+else:
+    dataset = load_dataset(config.dataset)
+    
 train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 
@@ -102,7 +108,7 @@ print(f"Full training set size: {len(train_data)}")
 print("Dataset features: " +  str(train_data.features))
 
 
-# Filter out samples with label -1 (for SNLI dataset)
+# Filter out samples with label -1 
 valid_indices = []
 for idx in range(len(train_data)):
     if train_data[idx]['label'] >=0:
@@ -247,10 +253,12 @@ class ExperimentDataset(Dataset):
         return len(self.data)
     
     def __getitem__(self, idx):
-        # text = self.data[idx]['text']
-        premise = self.data[idx]['premise']
-        hypothesis = self.data[idx]['hypothesis']
-        text = f"Premis: {premise} Hypothesis: {hypothesis}"
+        text = self.data[idx]['text']
+        
+        if(config.dataset == "snli"):
+            premise = self.data[idx]['premise']
+            hypothesis = self.data[idx]['hypothesis']
+            text = f"Premis: {premise} Hypothesis: {hypothesis}"
         label = self.data[idx]['label']
         
         encoding = self.tokenizer(

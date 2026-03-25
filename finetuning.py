@@ -45,9 +45,6 @@ class Finetuning:
                 input_ids = batch['input_ids'].to(self.device)
                 attention_mask = batch['attention_mask'].to(self.device)
                 labels = batch['labels'].to(self.device)
-                # print(input_ids.shape)
-                # print(attention_mask.shape)
-                # print(labels.shape)
                 
                 optimizer.zero_grad()
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)

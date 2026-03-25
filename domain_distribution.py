@@ -98,7 +98,7 @@ dataset  = load_dataset(dataset_name)
 train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 
-d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels)
+d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
 valid_indices = d1.get_valid_indices()
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
 finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
