@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'mergekit'))
 
 try:
+    from mergekit.config import MergeConfiguration
     from mergekit.merge import run_merge
     from mergekit.options import MergeOptions
     MERGEKIT_AVAILABLE = True
@@ -25,59 +26,6 @@ try:
 except ImportError as e:
     MERGEKIT_AVAILABLE = False
     print(f"⚠ Mergekit not available: {e}")
-    
-    
-def get_interpolated_model(self,lambda_k,interpolation_name,theta_base,theta_exp):
-    """
-    Create an interpolated pseudo-expert model between base and expert models.
-    
-    This is the main entry point for generating pseudo-expert models. It supports
-    multiple interpolation methods and delegates to the appropriate implementation:
-    
-    - 'linear': Direct parameter averaging
-    - 'quadratic': Non-linear parameter averaging with curvature
-    - 'slerp', 'ties', 'della': Advanced merging via mergekit
-    
-    All parameters are interpolated (not just the last layer) to maintain
-    model coherence and ensure the interpolated model represents a valid
-    point on the fine-tuning trajectory.
-    
-    Args:
-        lambda_k (float): Interpolation coefficient [0, 1]
-            - λ=0: Returns model equivalent to base model
-            - λ=1: Returns model equivalent to expert model
-            - 0<λ<1: Returns interpolated pseudo-expert
-        interpolation_name (str): Method name ('linear', 'quadratic', 'slerp', 
-                                    'ties', 'della')
-        theta_base (dict): Base model parameters {name: tensor}
-        theta_exp (dict): Expert model parameters {name: tensor}
-        
-    Returns:
-        BertForSequenceClassification: Interpolated model on self.device
-        
-    Note:
-        - Creates a fresh model from model_name, then copies interpolated parameters
-        - torch.no_grad() context ensures no gradient tracking during interpolation
-        - For mergekit methods, delegates to merge_with_mergekit()
-        
-    Implementation Detail:
-        Linear: θ_k = (1-λ)·θ_base + λ·θ_exp
-        Quadratic: θ_k = (1-w(λ))·θ_base + w(λ)·θ_exp where w is non-linear
-    """
-    print(f"\n{'-'*70}")
-    print(f"Interpolated Model (λ={lambda_k:.2f})")
-    print(f"{'-'*70}")
-    
-    # Create interpolated model: θ_k = (1 - λ_k) * θ_base + λ_k * θ_exp
-    # INTERPOLATE ALL PARAMETERS
-    theta_k_model = BertForSequenceClassification.from_pretrained(
-        self.model_name, num_labels=self.num_labels).to(self.device)
-    
-    # ToDo: we need to chnage only the classification layer/last layer weights. 
-    # What does the .named_parameters do and is there a better way to get the last layer weigths
-    
-    # Ans: we are not getting the last layer weights. By solving the prop equation, its importnant that we 
-    # itnerpoalte all the parameters.tion
     
     
 

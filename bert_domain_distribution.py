@@ -43,9 +43,9 @@ import torch.nn as nn
 import numpy as np
 import sys
 from data import Dataset
-from alignment import Alignment
-from finetuning import Finetuning
-from models import Model
+from bert_alignment import Alignment
+from bert_finetuning import Finetuning
+from bert_models import Model
 import json
 from transformers import BertTokenizer, BertForSequenceClassification
 import os 

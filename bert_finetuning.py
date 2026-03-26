@@ -3,7 +3,6 @@ import torch
 import os
 from torch.optim import AdamW,SGD
 import pickle
-from transformers import BertTokenizer, BertForSequenceClassification
 from tqdm import tqdm
 import random
 
@@ -155,9 +154,9 @@ class Finetuning:
                     print("current model number: " + str(num_model))
                     print("current batch: " + str(num_batch))
                     torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-                    # eval_accuracy = self.eval(model,self.device,eval_size)
-                    # print(f"Eval accuracy: {eval_accuracy}")
-                    # accuracy_arr.append(eval_accuracy)
+                    eval_accuracy = self.eval(model,self.device,eval_size)
+                    print(f"Eval accuracy: {eval_accuracy}")
+                    accuracy_arr.append(eval_accuracy)
                     model.train()
                     num_model+=1
             
