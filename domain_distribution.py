@@ -1,3 +1,43 @@
+"""
+Domain Distribution Experiment Runner
+
+This script orchestrates the complete workflow for analyzing class distribution
+effects on model fine-tuning using alignment-based methods. It implements the
+sample-level model hacking reverse engineering approach.
+
+Workflow:
+1. Load experiment configuration from JSON file
+2. Prepare datasets with controlled class proportions
+3. Fine-tune base model to create expert model
+4. Generate alignment matrices using multiple interpolation methods
+5. Save results and model artifacts
+
+The script supports multiple interpolation methods (linear, SLERP, TIES, etc.)
+and can handle various text classification datasets (AG News, SNLI, etc.).
+
+Usage:
+    python domain_distribution.py <config.json>
+
+Configuration File Format:
+    {
+        "n_total": 5000,              # Size of seed dataset
+        "n_finetune": 500,             # Size of fine-tuning dataset
+        "model_name": "bert-base-uncased",
+        "num_labels": 4,               # Number of classes
+        "proportionArr": [0.25, 0.25, 0.25, 0.25],  # Class distribution
+        "interpolations": ["linear", "slerp"],
+        "dataset": "ag_news",
+        "K": 15,                       # Number of pseudo-experts
+        "learning_rate": 0.000006,
+        ...
+    }
+
+Output:
+    - {experiment_name}/base_model/: Saved base model
+    - {experiment_name}/expert_model/: Saved expert model
+    - {experiment_name}/dataset_info.json: Dataset indices
+    - {dataset_name}_{interpolation}_{proportions}/: Alignment matrices
+"""
 import torch
 import torch.nn as nn
 import numpy as np
@@ -35,6 +75,35 @@ except json.JSONDecodeError as e:
     sys.exit(1)
     
 class Config:
+    """
+    Configuration container for experiment parameters.
+    
+    This class dynamically loads all parameters from a JSON configuration file
+    and computes derived parameters needed for the experiment.
+    
+    Dynamic Attributes (from JSON):
+        n_total (int): Size of seed dataset for alignment computation
+        n_finetune (int): Size of fine-tuning dataset
+        model_name (str): HuggingFace model identifier
+        max_length (int): Maximum sequence length for tokenization
+        num_labels (int): Number of classification labels
+        batch_size (int): Training batch size
+        learning_rate (float): Optimizer learning rate
+        num_epochs (int): Number of training epochs
+        K (int): Number of pseudo-expert interpolation points
+        lambda_min (float): Minimum interpolation coefficient
+        lambda_max (float): Maximum interpolation coefficient
+        interpolations (list): List of interpolation methods to use
+        optimizer (str): Optimizer name ('Adam' or 'SGD')
+        dataset (str): Dataset name (e.g., 'ag_news', 'snli')
+        proportionArr (list): Target class distribution
+        finetuning_source (str): Source for fine-tuning samples ('select' or 'original')
+        experiment_name (str): Name/path for experiment outputs
+    
+    Computed Attributes:
+        lambdas (np.ndarray): Array of K interpolation coefficients from lambda_min to lambda_max
+        device (torch.device): Computation device (CUDA if available, else CPU)
+    """
     def __init__(self, config_dict):
         # Assign all JSON parameters to class attributes
         for key, value in config_dict.items():
@@ -99,11 +168,17 @@ train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
+
+
 valid_indices = d1.get_valid_indices()
+D_dataset = d1.ExperimentDataset(train_data.select(valid_indices), tokenizer, max_length,dataset_name)
+
+
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
+seed_dataset_dataloader = d1.get_selectseed_dataloader(select_seed_indices ,batch_size,max_length)
+
 finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
-finetuning_dataloader = d1.get_finetuning_dataloader(valid_indices,batch_size,max_length)
-seed_dataset_dataloader = d1.get_selectseed_dataloader(finetuned_indices ,batch_size,max_length)
+finetuning_dataloader = d1.get_finetuning_dataloader(finetuned_indices,batch_size,max_length)
 
 
 
@@ -127,7 +202,7 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 """
 initializign and finetuning the base model
 """
-f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, train_data)
+f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, D_dataset )
 
 base_model = BertForSequenceClassification.from_pretrained(
     config.model_name, 
@@ -143,14 +218,38 @@ eval_size = 5000
 f1.finetune_base(exp_model,output_dir,eval_size)
 
 
+
+
+# Save the base model
+base_model_dir = os.path.join(output_dir, 'base_model')
+base_model.save_pretrained(base_model_dir)
+tokenizer.save_pretrained(base_model_dir)
+print(f"✓ Base model saved to {base_model_dir}/ (for mergekit)")
+
+torch.save(base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
+print(f"✓ Base state dict saved to {output_dir}/theta_base_model.pt")
+
+
+# Save the expert model
+expert_model_dir = os.path.join(output_dir, 'expert_model')
+exp_model.save_pretrained(expert_model_dir)
+tokenizer.save_pretrained(expert_model_dir)
+print(f"✓ Expert model saved to {expert_model_dir}/ (for mergekit)")
+
+torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
+print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
+
+
+
+
 """
 construct the alignment scores
 """
-a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr, base_model, exp_model, device)
-m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name)
+a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr,base_model,exp_model, device)
+m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels)
 
 for interpolation_name in config.interpolations:
-    a1.generate_alignment_matrix(interpolation_name,output_dir)
+    a1.generate_alignment_matrix(interpolation_name,output_dir,m1)
     
     
 """

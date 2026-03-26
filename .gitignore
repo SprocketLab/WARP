@@ -10,3 +10,5 @@ merge.ipynb
 /.ipynb_checkpoints
 /__pycache__
 /old_*
+/pkl_files
+/npy_files

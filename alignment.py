@@ -1,13 +1,35 @@
 import numpy as np
 import torch
-import tqdm
+from tqdm import tqdm
 import json
 import os
 from models import Model
+from transformers import BertTokenizer, BertForSequenceClassification
+
 
 class Alignment:
+    """
+    Handles the computation of alignment matrices for model interpolation experiments.
     
-    # suually the data valeus whcih determine the experiment, outline the experiment
+    This class computes how well each sample in a seed dataset aligns with the direction
+    of fine-tuning (from base model to expert model) at different interpolation points.
+    The alignment is measured using gradient-based scoring, specifically focusing on the
+    last layer (classifier) of the model.
+    
+    Attributes:
+        n_seed (int): Number of samples in the seed dataset
+        no_of_pseudoexperts (int): Number of interpolated pseudo-expert models (K)
+        lambdas (np.ndarray): Array of interpolation coefficients [0, 1]
+        D_loader (DataLoader): DataLoader for the seed dataset
+        dataset_name (str): Name of the dataset (e.g., 'ag_news', 'snli')
+        proportion_arr (list): Target class distribution proportions
+        base_model (BertForSequenceClassification): Pre-trained base model
+        exp_model (BertForSequenceClassification): Fine-tuned expert model
+        device (torch.device): Device for computation (CPU or CUDA)
+        theta_base (dict): Base model parameters dictionary
+        theta_exp (dict): Expert model parameters dictionary
+    """
+    
     def __init__(self,n_seed, no_of_pseudopexperts, lambdas, seed_dataset_loader, dataset_name, proportion_arr, base_model, expert_model, device):
         self.n_seed = n_seed
         self.no_of_pseudoexperts = no_of_pseudopexperts
@@ -17,11 +39,26 @@ class Alignment:
         self.proportion_arr = proportion_arr
         self.base_model = base_model
         self.exp_model = expert_model
-        self.device = device
-        
-        
+        self.device = device        
+        self.theta_base = {name: param.clone().detach().to(self.device)  for name, param in self.base_model.named_parameters()}
+        self.theta_exp = {name: param.clone().detach().to(self.device) for name, param in self.exp_model.named_parameters()}
+
+
     
     def extract_last_layer_gradient(self,model):
+        """
+        Extract gradients from the classifier (last layer) of the model.
+        
+        This method collects and flattens gradients from all parameters in the
+        classifier layer, which is identified by having 'classifier' in the parameter name.
+        
+        Args:
+            model (BertForSequenceClassification): Model with computed gradients
+            
+        Returns:
+            torch.Tensor: Flattened tensor of concatenated gradients from classifier layer,
+                         or None if no gradients are found
+        """
         grad = []
         for name, param in model.named_parameters():
             if 'classifier' in name and param.grad is not None:
@@ -34,7 +71,21 @@ class Alignment:
     
     
     def get_last_layer_params(self,model):
-        """Extract only the classifier (last layer) parameters"""
+        """
+        Extract only the classifier (last layer) parameters from the model.
+        
+        For BERT models, this extracts parameters from the model.classifier layer,
+        which handles the final classification task.
+        
+        Args:
+            model (BertForSequenceClassification): Model to extract parameters from
+            
+        Returns:
+            dict: Dictionary mapping parameter names to parameter tensors for classifier layer
+            
+        Note:
+            All parameters with 'classifier' in their name are considered part of the last layer.
+        """
         # ToDo: check if all lastlayer params have "classifier" in name
         # For BERT, the classifier is model.classifier
         last_layer_params = {}
@@ -43,11 +94,44 @@ class Alignment:
                 last_layer_params[name] = param
         return last_layer_params
     
-    
-    
-    
 
-    def generate_alignment_matrix(self,interpolation_name,input_dir):    
+    def generate_alignment_matrix(self,interpolation_name,input_dir,interpmodel_instance):
+        """
+        Generate the alignment matrix M for measuring sample-model alignment.
+        
+        This is the core method that computes an N×K alignment matrix where:
+        - N is the number of samples in the seed dataset
+        - K is the number of interpolated pseudo-expert models
+        
+        For each interpolated model θ_k at interpolation coefficient λ_k, the method:
+        1. Creates or loads the interpolated model
+        2. Computes the direction vector (θ_k - θ_exp) for the last layer
+        3. For each sample, computes the gradient of the loss w.r.t. last layer
+        4. Computes alignment score as the dot product of gradient and direction
+        
+        The alignment score indicates how much a sample's gradient points in the
+        direction of the fine-tuning trajectory.
+        
+        Args:
+            interpolation_name (str): Type of interpolation ('linear', 'slerp', 'ties', 
+                                     'model_baseline', etc.)
+            input_dir (str): Directory containing saved models (for 'model_baseline' mode)
+            interpmodel_instance (Model): Model instance for creating interpolated models
+            
+        Side Effects:
+            - Creates a directory named {dataset_name}_{interpolation_name}_{proportion_arr}
+            - Saves alignment matrix as alignment_matrix_{interpolation_name}.npy
+            - Saves lambda statistics as lambda_statistics.json
+            - Prints detailed progress and statistics
+            
+        Returns:
+            None (saves results to disk)
+            
+        Note:
+            - Uses only last layer gradients for memory efficiency
+            - Normalizes alignment scores by direction norm
+            - Processes samples one at a time to compute per-sample gradients
+        """    
             
         theta_base_last = self.get_last_layer_params(self.base_model)
         theta_exp_last = self.get_last_layer_params(self.exp_model)
@@ -72,7 +156,7 @@ class Alignment:
         for k, lambda_k in enumerate(self.lambdas):
 
             if(interpolation_name!='model_baseline'):
-                theta_k_model = self.get_interpolated_model(lambda_k,interpolation_name)
+                theta_k_model = interpmodel_instance.get_interpolated_model(lambda_k,interpolation_name,self.theta_base,self.theta_exp)
             else:
                 theta_k_model = torch.load(f'./{input_dir}/model_{k}.pt',weights_only=False)
             
