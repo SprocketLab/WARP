@@ -3,7 +3,6 @@ import random
 import os
 import numpy as np
 import sys
-from transformers import BertTokenizer, BertForSequenceClassification
 from torch.utils.data import Dataset, DataLoader
 import torch
 
