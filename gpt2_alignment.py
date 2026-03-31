@@ -1,3 +1,30 @@
+"""
+GPT-2 Alignment Matrix Computation Module
+
+This module computes alignment scores between samples and model fine-tuning trajectories
+for GPT-2 models. The alignment score measures how well a sample's gradient aligns with
+the direction of fine-tuning from a base model to an expert model.
+
+Key Concepts:
+- Alignment measures if a sample "benefits" from fine-tuning
+- Uses gradient-based scoring with last layer (score layer) only
+- Computes N×K alignment matrix (N samples, K pseudo-experts)
+- Higher scores indicate better alignment with expert model
+
+Algorithm:
+For each pseudo-expert θ_k at interpolation coefficient λ_k:
+1. Compute direction vector: d_k = θ_k_last - θ_exp_last (last layer only)
+2. For each sample i:
+   a. Compute gradient: g_i = ∇_θ_last L(x_i, y_i; θ_k)
+   b. Compute alignment: M[i,k] = <g_i, d_k> / ||d_k||
+
+The resulting alignment matrix M can be used for:
+- Sample selection based on model alignment
+- Understanding which samples drive fine-tuning
+- Analyzing trajectory dynamics across different interpolation methods
+
+"""
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -7,25 +34,34 @@ from gpt2_models import Model
 
 class Alignment:
     """
-    Handles the computation of alignment matrices for model interpolation experiments.
+    Handles the computation of alignment matrices for GPT-2 model interpolation experiments.
     
     This class computes how well each sample in a seed dataset aligns with the direction
     of fine-tuning (from base model to expert model) at different interpolation points.
     The alignment is measured using gradient-based scoring, specifically focusing on the
-    last layer (classifier) of the model.
+    last layer (score layer) of the GPT-2 model.
+    
+    The core computation:
+    For each pseudo-expert θ_k at interpolation coefficient λ_k:
+    1. Compute direction vector: d_k = θ_k_last - θ_exp_last (last layer only)
+    2. For each sample i, compute gradient: g_i = ∇_θ_last L(x_i, y_i; θ_k)
+    3. Compute alignment score: M[i,k] = <g_i, d_k> / ||d_k||
+    
+    Higher alignment scores indicate that the sample's gradient points in the direction
+    of the fine-tuning trajectory, suggesting it benefits from the expert model.
     
     Attributes:
-        n_seed (int): Number of samples in the seed dataset
+        n_seed (int): Number of samples in the seed dataset (N)
         no_of_pseudoexperts (int): Number of interpolated pseudo-expert models (K)
-        lambdas (np.ndarray): Array of interpolation coefficients [0, 1]
-        D_loader (DataLoader): DataLoader for the seed dataset
+        lambdas (np.ndarray): Array of interpolation coefficients [0, 1] of length K
+        D_loader (DataLoader): DataLoader for the seed dataset D
         dataset_name (str): Name of the dataset (e.g., 'ag_news', 'snli')
-        proportion_arr (list): Target class distribution proportions
-        base_model (BertForSequenceClassification): Pre-trained base model
-        exp_model (BertForSequenceClassification): Fine-tuned expert model
+        proportion_arr (list): Target class distribution proportions for D'
+        base_model (GPT2ForSequenceClassification): Pre-trained base model θ_base
+        exp_model (GPT2ForSequenceClassification): Fine-tuned expert model θ_exp
         device (torch.device): Device for computation (CPU or CUDA)
-        theta_base (dict): Base model parameters dictionary
-        theta_exp (dict): Expert model parameters dictionary
+        theta_base (dict): Base model parameters dictionary (state_dict)
+        theta_exp (dict): Expert model parameters dictionary (state_dict)
     """
     
     def __init__(self,n_seed, no_of_pseudopexperts, lambdas, seed_dataset_loader, dataset_name, proportion_arr, base_model, expert_model, device):
@@ -128,6 +164,7 @@ class Alignment:
             - Uses only last layer gradients for memory efficiency
             - Normalizes alignment scores by direction norm
             - Processes samples one at a time to compute per-sample gradients
+            - Clears GPU cache after processing each pseudo-expert
         """    
             
         theta_base_last = self.get_last_layer_params(self.base_model)

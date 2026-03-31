@@ -18,20 +18,6 @@ and can handle various text classification datasets (AG News, SNLI, etc.).
 Usage:
     python domain_distribution.py <config.json>
 
-Configuration File Format:
-    {
-        "n_total": 5000,              # Size of seed dataset
-        "n_finetune": 500,             # Size of fine-tuning dataset
-        "model_name": "bert-base-uncased",
-        "num_labels": 4,               # Number of classes
-        "proportionArr": [0.25, 0.25, 0.25, 0.25],  # Class distribution
-        "interpolations": ["linear", "slerp"],
-        "dataset": "ag_news",
-        "K": 15,                       # Number of pseudo-experts
-        "learning_rate": 0.000006,
-        ...
-    }
-
 Output:
     - {experiment_name}/base_model/: Saved base model
     - {experiment_name}/expert_model/: Saved expert model

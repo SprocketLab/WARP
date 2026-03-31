@@ -1,5 +1,25 @@
+"""
+GPT-2 Model Interpolation and Merging Module
 
+This module provides functionality for creating pseudo-expert models by interpolating
+between a base GPT-2 model and an expert GPT-2 model. It supports multiple interpolation
+methods ranging from simple linear interpolation to advanced merging techniques.
 
+Key Features:
+- Linear and quadratic parameter interpolation
+- Integration with mergekit for advanced merging (SLERP, TIES, DELLA)
+- Automatic YAML configuration generation for mergekit
+- Support for GPT-2 sequence classification models
+- GPU/CPU compatible with automatic device handling
+
+Interpolation Methods:
+1. Linear: θ_k = (1-λ) * θ_base + λ * θ_expert
+2. Quadratic: Non-linear weighting with configurable curvature
+3. SLERP: Spherical linear interpolation preserving parameter magnitude
+4. TIES: Task vector merging with magnitude-based pruning
+5. DELLA: Advanced density-based merging with rescaling
+
+"""
 
 import torch
 import torch.nn as nn
@@ -32,28 +52,46 @@ except ImportError as e:
 
 class Model:
     """
-    Handles model interpolation and merging for creating pseudo-expert models.
+    Handles model interpolation and merging for creating pseudo-expert models with GPT-2.
     
-    This class provides multiple methods for interpolating between a base model
-    and an expert model to create intermediate pseudo-expert models. It supports:
+    This class provides multiple methods for interpolating between a base GPT-2 model
+    and an expert GPT-2 model to create intermediate pseudo-expert models along the
+    fine-tuning trajectory. It supports various interpolation techniques:
     
-    1. Linear interpolation: θ_k = (1-λ)θ_base + λ·θ_exp
-    2. Quadratic interpolation: Non-linear weighting with curvature control
-    3. SLERP (Spherical Linear Interpolation): Smooth interpolation on sphere
-    4. TIES (Task Intersection with Expert Selection): Parameter pruning + merging
-    5. DELLA: Advanced merging with density-based pruning
+    1. **Linear Interpolation**: Simple weighted average of parameters
+       θ_k = (1-λ_k) * θ_base + λ_k * θ_expert
+       
+    2. **Quadratic Interpolation**: Non-linear weighting with curvature control
+       w(λ) = curve_param * λ² + (1-curve_param) * λ
+       Allows convex/concave trajectories through parameter space
+       
+    3. **SLERP** (Spherical Linear Interpolation): 
+       Interpolates along the surface of a hypersphere
+       Preserves parameter magnitude better than linear interpolation
+       
+    4. **TIES** (Task Intersection with Expert Selection):
+       - Computes task vector: τ = θ_expert - θ_base
+       - Prunes parameters by magnitude (keeps top 'density' fraction)
+       - Resolves conflicts by parameter sign consistency
+       - Result: θ_merged = θ_base + weight * τ_pruned
+       
+    5. **DELLA** (Density-based Expert Layer Aggregation):
+       - Advanced version of TIES with better numerical stability
+       - Uses density-based parameter selection
+       - Optional rescaling to maintain model capacity
     
     The class integrates with the mergekit library for advanced merging methods
-    and handles all the configuration, execution, and model loading.
+    (SLERP, TIES, DELLA) and implements simple interpolation (linear, quadratic) directly.
     
     Attributes:
-        tokenizer: HuggingFace tokenizer for the model
-        base_model_path (str): Path to saved base model
-        expert_model_path (str): Path to saved expert model
-        no_of_pseudoexperts (int): Number of interpolated models to create
+        tokenizer (GPT2Tokenizer): HuggingFace GPT-2 tokenizer
+        base_model_path (str): Path to saved base model (for mergekit)
+        expert_model_path (str): Path to saved expert model (for mergekit)
+        no_of_pseudoexperts (int): Number of interpolated models to create (K)
         device (torch.device): Device for model operations (CPU or CUDA)
-        model_name (str): HuggingFace model identifier (e.g., 'bert-base-uncased')
-        num_labels (int): Number of classification labels
+        model_name (str): HuggingFace model identifier (e.g., 'openai-community/gpt2')
+        num_labels (int): Number of classification labels for the task
+
     """
     
     def __init__(self,tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels):
@@ -232,46 +270,54 @@ class Model:
 
     def merge_with_mergekit(self,method: str,lambda_k: float,**kwargs):
         """
-        Merge base and expert models using mergekit's implementation.
+        Merge base and expert GPT-2 models using mergekit's implementation.
         
         This is the main method for creating pseudo-expert models using advanced
-        merging techniques (SLERP, TIES, DELLA). It:
-        1. Creates appropriate YAML configuration for the method
+        merging techniques (SLERP, TIES, DELLA). The workflow is:
+        1. Creates appropriate YAML configuration for the specified method
         2. Initializes mergekit's MergeConfiguration and MergeOptions
-        3. Executes the merge operation
-        4. Loads the merged model and returns it
+        3. Executes the merge operation in a temporary directory
+        4. Loads the merged model from disk
         5. Cleans up temporary files
         
-        The merging happens in a temporary directory with a unique ID to avoid
-        conflicts when running multiple merges in parallel.
+        The merging happens in a temporary directory with a unique UUID to avoid
+        conflicts when running multiple merges in parallel or consecutively.
         
         Args:
             method (str): Merging method - 'slerp', 'ties', or 'della'
             lambda_k (float): Interpolation parameter [0, 1]
                             Controls how much to blend base vs expert
+                            λ=0 gives base model, λ=1 gives expert model
             **kwargs: Method-specific parameters:
-                - For TIES: density (default: 0.9)
+                - For SLERP: no additional parameters
+                - For TIES: density (default: 0.9) - fraction of params to keep
                 - For DELLA: density (default: 0.9), epsilon (default: 1e-8), 
                            rescale (default: True)
             
         Returns:
-            BertForSequenceClassification: Merged model loaded on self.device
+            GPT2ForSequenceClassification: Merged model loaded on self.device
             
         Raises:
-            ImportError: If mergekit is not available
-            ValueError: If method is not recognized
-            Exception: If merge operation fails
+            ImportError: If mergekit library is not available
+            ValueError: If method is not recognized ('slerp', 'ties', 'della')
+            Exception: If merge operation fails during execution
             
         Side Effects:
             - Creates temporary directory for merge output
-            - Saves YAML config to temp directory
+            - Saves YAML config to system temp directory
+            - Loads merged model weights into memory
             - Cleans up temp directory after loading model
-            - Prints detailed progress information
+            - Prints detailed progress information to stdout
             
         Note:
-            - Requires mergekit library to be installed
-            - Uses unique UUIDs to allow parallel execution
+            - Requires mergekit library to be installed and importable
+            - Uses unique UUIDs to allow parallel/sequential execution
             - Tokenizer is not copied (copy_tokenizer=False)
+            - GPU memory is freed after loading the model
+            
+        Example:
+            >>> # Create pseudo-expert using TIES with 90% density
+            >>> model = self.merge_with_mergekit('ties', 0.5, density=0.9)
         """
 
         print(f"\n{'='*70}")
@@ -414,21 +460,55 @@ class Model:
 
 
     def get_interpolated_model(self,lambda_k,interpolation_name,theta_base,theta_exp):
+        """
+        Create an interpolated pseudo-expert model at a specific interpolation point.
+        
+        This is the main dispatcher method that creates a pseudo-expert model by
+        interpolating between base and expert models. It supports multiple interpolation
+        methods:
+        - 'linear': Direct weighted average of parameters
+        - 'quadratic': Non-linear weighted average with curvature
+        - 'slerp', 'ties', 'della': Advanced merging via mergekit
+        
+        For linear/quadratic methods, this function:
+        1. Creates a fresh GPT-2 model with the correct configuration
+        2. Copies interpolated weights: θ_k = (1-w) * θ_base + w * θ_expert
+        3. Returns the model ready for use
+        
+        For advanced methods (SLERP, TIES, DELLA), it delegates to merge_with_mergekit().
+        
+        Args:
+            lambda_k (float): Interpolation coefficient [0, 1]
+                            λ=0 returns base model, λ=1 returns expert model
+            interpolation_name (str): Method name - 'linear', 'quadratic', 'slerp', 
+                                     'ties', or 'della'
+            theta_base (dict): Base model parameters (state_dict)
+                             Keys are parameter names, values are tensors
+            theta_exp (dict): Expert model parameters (state_dict)
+                            Keys are parameter names, values are tensors
+            
+        Returns:
+            GPT2ForSequenceClassification: Interpolated model loaded on self.device
+            
+        Note:
+            - All parameters are interpolated, not just the classification head
+            - This is required for proper alignment computation
+            - For quadratic interpolation, curve_param=0.3 by default
+            - Advanced methods require mergekit library to be installed
+            
+        """
         print(f"\n{'-'*70}")
         print(f"Interpolated Model (λ={lambda_k:.2f})")
         print(f"{'-'*70}")
         
         # Create interpolated model: θ_k = (1 - λ_k) * θ_base + λ_k * θ_exp
-        # INTERPOLATE ALL PARAMETERS
+        # INTERPOLATE ALL PARAMETERS (not just classification head)
         model_config = GPT2Config.from_pretrained(pretrained_model_name_or_path="openai-community/gpt2", num_labels=self.num_labels)
         theta_k_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(self.device)
         
-        # ToDo: we need to chnage only the classification layer/last layer weights. 
-        # What does the .named_parameters do and is there a better way to get the last layer weigths
-        
-        # Ans: we are not getting the last layer weights. By solving the prop equation, its importnant that we 
-        # itnerpoalte all the parameters. 
-        
+        # Interpolate based on method
+        # Note: We interpolate ALL parameters, not just the classification layer
+        # This is necessary for proper alignment computation as derived from the optimization equation
         
         if(interpolation_name=='linear'):
             with torch.no_grad():

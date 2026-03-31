@@ -1,3 +1,26 @@
+"""
+GPT-2 Fine-tuning Module for Expert Model Creation
+
+This module handles the fine-tuning of GPT-2 models on specialized datasets with
+controlled class distributions. It supports creating expert models and saving
+intermediate checkpoints (pseudo-experts) during training for alignment analysis.
+
+Key Features:
+- Fine-tune GPT-2 on biased datasets (D') with target class distributions
+- Save K intermediate model checkpoints during training
+- Evaluate model accuracy on held-out test sets
+- Support for Adam (adaptive) and SGD (static) optimizers
+- Progress tracking with tqdm and detailed logging
+
+Training Process:
+1. Initialize optimizer (Adam or SGD) with specified learning rate
+2. Train on fine-tuning dataset D' for specified epochs
+3. Save checkpoints at regular batch intervals: K+1 points total
+4. Evaluate accuracy at each checkpoint on evaluation set
+5. Return accuracy history for analysis
+
+"""
+
 import numpy as np 
 import torch
 import os
@@ -11,28 +34,35 @@ import random
 
 class Finetuning:
     """
-    Manages the fine-tuning process for creating expert models.
+    Manages the fine-tuning process for creating expert GPT-2 models.
     
-    This class handles the training of a base model on a specialized fine-tuning
+    This class handles the training of a base GPT-2 model on a specialized fine-tuning
     dataset with controlled class proportions. It also supports saving intermediate
     model checkpoints (pseudo-experts) during training for alignment computation.
     
+    The fine-tuning process:
+    1. Trains a base model on a biased dataset D' with target class distribution
+    2. Saves K intermediate model checkpoints at regular batch intervals
+    3. Evaluates model accuracy on a held-out evaluation set
+    4. Tracks training progress with loss and accuracy metrics
+    
     The class provides:
-    - Model training with configurable optimizers (Adam, SGD)
+    - Model training with configurable optimizers (Adam for adaptive LR, SGD for static)
     - Periodic model checkpointing for pseudo-expert generation
-    - Evaluation on a held-out set
-    - Training progress tracking
+    - Evaluation on a held-out set with random sampling
+    - Training progress tracking with tqdm progress bars
     
     Attributes:
+        n_finetune (int): Size of fine-tuning dataset D'
         learning_rate (float): Learning rate for optimizer
         batch_size (int): Batch size for training
         epochs (int): Number of training epochs
         optimizer (str): Optimizer name ('Adam' or 'SGD')
-        finetuning_data_loader (DataLoader): DataLoader for fine-tuning dataset
+        finetuning_data_loader (DataLoader): DataLoader for fine-tuning dataset D'
         device (torch.device): Device for computation (CPU or CUDA)
-        no_of_pseudoexperts (int): Number of intermediate models to save
-        eval_set (Dataset): Dataset for evaluation
-        n_finetune (int): Size of fine-tuning dataset
+        no_of_pseudoexperts (int): Number of intermediate models to save (K)
+        eval_set (Dataset): Dataset for evaluation (superset of D and D')
+
     """
     
     def __init__(self,n_finetune, learning_rate, batch_size, epochs, optimizer, finetuning_loader, device, no_of_pseudoexperts,superset_eval_set):
@@ -50,20 +80,26 @@ class Finetuning:
     
     def eval(self,model,device,eval_size):
         """
-        Evaluate model accuracy on a random subset of the evaluation set.
+        Evaluate GPT-2 model accuracy on a random subset of the evaluation set.
+        
+        This method measures classification accuracy by running inference on a
+        random sample of the evaluation dataset. It processes samples one at a
+        time to avoid memory issues with large evaluation sets.
         
         Args:
-            model: The model to evaluate
-            device: Device to run evaluation on (CPU or CUDA)
-            eval_size (int): Number of samples to evaluate on
+            model (GPT2ForSequenceClassification): The model to evaluate
+            device (torch.device): Device to run evaluation on (CPU or CUDA)
+            eval_size (int): Number of samples to evaluate on (e.g., 5000)
             
         Returns:
             float: Accuracy as a fraction [0, 1]
             
         Note:
-            - Model is set to eval mode
+            - Model is set to eval mode (disables dropout, etc.)
             - Uses random sampling from eval_set for efficiency
             - No gradient computation (uses torch.no_grad())
+            - Processes samples individually with unsqueeze(0)
+            - Uses outputs.logits for GPT-2 (not unpacking outputs[:2])
         """
         model.eval()
         correct_pred = 0.0
@@ -73,6 +109,7 @@ class Finetuning:
             no_of_eval_datapoints = eval_size
             total_samples = len(self.eval_set)
             random_indices = random.sample(range(total_samples), no_of_eval_datapoints)
+            random_indices = range(total_samples)[:no_of_eval_datapoints]
             for i in random_indices:
                 data = self.eval_set[i]
                 # unsqueeze is more compatible with CUDA
@@ -96,10 +133,9 @@ class Finetuning:
         return correct_pred/no_of_eval_datapoints    
     
 
-    # Training function
     def train_model(self,model, output_dir,eval_size,optimizer):
         """
-        Train the model and save intermediate checkpoints as pseudo-experts.
+        Train the GPT-2 model and save intermediate checkpoints as pseudo-experts.
         
         This method trains the model on the fine-tuning dataset and periodically
         saves model checkpoints. The checkpoints are saved at regular intervals
@@ -108,24 +144,29 @@ class Finetuning:
         These intermediate models represent points along the fine-tuning trajectory
         and can be used for alignment computation or as pseudo-experts.
         
+        The checkpoint frequency is calculated as:
+        batch_interval = (total_epochs * batches_per_epoch) / (K + 1)
+        
         Args:
-            model: BERT model to train
+            model (GPT2ForSequenceClassification): GPT-2 model to train
             output_dir (str): Directory to save model checkpoints
             eval_size (int): Number of samples for evaluation
-            optimizer: PyTorch optimizer (Adam or SGD)
+            optimizer (torch.optim.Optimizer): PyTorch optimizer (Adam or SGD)
             
         Returns:
-            list: Accuracy values at each checkpoint (currently empty)
+            list: Accuracy values at each checkpoint
             
         Side Effects:
             - Saves models as model_0.pt, model_1.pt, ..., model_{K-1}.pt
-            - Prints training progress and loss
+            - Prints training progress, loss, and evaluation accuracy
             - Updates model parameters in-place
+            - Evaluates model at each checkpoint
             
         Note:
             - Checkpoints are saved during training, not at epoch boundaries
             - The final expert model is not saved here (saved separately)
-            - Batch interval determines checkpoint frequency
+            - Uses tqdm for progress visualization
+            - Model is set to eval mode during evaluation, then back to train mode
         """
         accuracy_arr = []
         model.train()
@@ -182,7 +223,7 @@ class Finetuning:
     """
     def finetune_base(self,theta_exp_model,output_dir,eval_size):
         """
-        Fine-tune a base model to create an expert model on the specialized dataset.
+        Fine-tune a base GPT-2 model to create an expert model on the specialized dataset.
         
         This is the main entry point for the fine-tuning process. It:
         1. Selects the appropriate optimizer (Adam for adaptive LR, SGD for static)
@@ -191,7 +232,7 @@ class Finetuning:
         4. Saves accuracy history
         
         Args:
-            theta_exp_model (BertForSequenceClassification): Model to fine-tune
+            theta_exp_model (GPT2ForSequenceClassification): Model to fine-tune
             output_dir (str): Directory to save models and results
             eval_size (int): Number of samples for evaluation
             
