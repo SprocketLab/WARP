@@ -3,9 +3,7 @@ import torch
 from tqdm import tqdm
 import json
 import os
-from models import Model
-from transformers import BertTokenizer, BertForSequenceClassification
-
+from gpt2_models import Model
 
 class Alignment:
     """
