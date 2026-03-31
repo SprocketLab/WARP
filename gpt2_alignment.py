@@ -48,10 +48,10 @@ class Alignment:
         Extract gradients from the classifier (last layer) of the model.
         
         This method collects and flattens gradients from all parameters in the
-        classifier layer, which is identified by having 'classifier' in the parameter name.
+        classifier layer. For GPT-2, this is identified by 'score' in the parameter name.
         
         Args:
-            model (BertForSequenceClassification): Model with computed gradients
+            model (GPT2ForSequenceClassification): Model with computed gradients
             
         Returns:
             torch.Tensor: Flattened tensor of concatenated gradients from classifier layer,
@@ -59,7 +59,7 @@ class Alignment:
         """
         grad = []
         for name, param in model.named_parameters():
-            if 'classifier' in name and param.grad is not None:
+            if 'score' in name and param.grad is not None:
                 grad.append(param.grad.flatten().clone())
         if len(grad) == 0:
             return None
@@ -72,23 +72,22 @@ class Alignment:
         """
         Extract only the classifier (last layer) parameters from the model.
         
-        For BERT models, this extracts parameters from the model.classifier layer,
+        For GPT-2 models, this extracts parameters from the model.score layer,
         which handles the final classification task.
         
         Args:
-            model (BertForSequenceClassification): Model to extract parameters from
+            model (GPT2ForSequenceClassification): Model to extract parameters from
             
         Returns:
             dict: Dictionary mapping parameter names to parameter tensors for classifier layer
             
         Note:
-            All parameters with 'classifier' in their name are considered part of the last layer.
+            All parameters with 'score' in their name are considered part of the last layer.
         """
-        # ToDo: check if all lastlayer params have "classifier" in name
-        # For BERT, the classifier is model.classifier
+        # For GPT-2, the classifier is model.score
         last_layer_params = {}
         for name, param in model.named_parameters():
-            if 'classifier' in name:  # Only get classifier layer
+            if 'score' in name:  # Only get score layer (GPT-2's classification head)
                 last_layer_params[name] = param
         return last_layer_params
     

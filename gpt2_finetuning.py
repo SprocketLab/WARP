@@ -3,7 +3,7 @@ import torch
 import os
 from torch.optim import AdamW,SGD
 import pickle
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import GPT2Tokenizer, GPT2ForSequenceClassification
 from tqdm import tqdm
 import random
 
@@ -163,10 +163,10 @@ class Finetuning:
                 if(num_batch%batch_interval==0) and num_model < self.no_of_pseudoexperts :
                     print("current model number: " + str(num_model))
                     print("current batch: " + str(num_batch))
-                    # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
-                    # eval_accuracy = self.eval(model,self.device,eval_size)
-                    # print(f"Eval accuracy: {eval_accuracy}")
-                    # accuracy_arr.append(eval_accuracy)
+                    torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
+                    eval_accuracy = self.eval(model,self.device,eval_size)
+                    print(f"Eval accuracy: {eval_accuracy}")
+                    accuracy_arr.append(eval_accuracy)
                     model.train()
                     num_model+=1
             

@@ -106,6 +106,7 @@ Initializign the tokenizer and paths
 base_model_path = os.path.join(output_dir, 'base_model') 
 expert_model_path = os.path.join(output_dir, 'expert_model') 
 
+# all models use the same tokenizer
 print('Loading tokenizer...')
 tokenizer = GPT2Tokenizer.from_pretrained(pretrained_model_name_or_path="openai-community/gpt2")
 # default to left padding
@@ -128,7 +129,6 @@ print(f"{'='*70}\n")
 """
 Get the dataloaders
 """
-
 dataset  = load_dataset(dataset_name)
 train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
@@ -168,7 +168,7 @@ model_config = GPT2Config.from_pretrained(pretrained_model_name_or_path="openai-
 
 
 """
-initializign and finetuning the base model
+initializign the models, finetuning the base model, adn saving checkpoints
 """
 f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, D_dataset )
 
@@ -179,27 +179,25 @@ exp_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2
 exp_model.config.pad_token_id = exp_model.config.eos_token_id
 
 
+# finetuning the base model
 eval_size = 5000
 f1.finetune_base(exp_model,output_dir,eval_size)
 
 
 
-
 # Save the base model
-base_model_dir = os.path.join(output_dir, 'base_model')
-base_model.save_pretrained(base_model_dir)
-tokenizer.save_pretrained(base_model_dir)
-print(f"✓ Base model saved to {base_model_dir}/ (for mergekit)")
+base_model.save_pretrained(base_model_path)
+tokenizer.save_pretrained(base_model_path)
+print(f"✓ Base model saved to {base_model_path}/ (for mergekit)")
 
 torch.save(base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
 print(f"✓ Base state dict saved to {output_dir}/theta_base_model.pt")
 
 
 # Save the expert model
-expert_model_dir = os.path.join(output_dir, 'expert_model')
-exp_model.save_pretrained(expert_model_dir)
-tokenizer.save_pretrained(expert_model_dir)
-print(f"✓ Expert model saved to {expert_model_dir}/ (for mergekit)")
+exp_model.save_pretrained(expert_model_path )
+tokenizer.save_pretrained(expert_model_path )
+print(f"✓ Expert model saved to {expert_model_path }/ (for mergekit)")
 
 torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
 print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")

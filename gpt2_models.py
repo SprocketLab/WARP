@@ -4,8 +4,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, Subset
-from transformers import BertTokenizer, BertForSequenceClassification
-from transformers import GPT2ForSequenceClassification,GPT2Config
+from transformers import GPT2Tokenizer, GPT2ForSequenceClassification, GPT2Config
 import tempfile
 import sys
 import yaml 
@@ -351,7 +350,7 @@ class Model:
             
             # Load merged model state dict
             print(f"  Loading merged model from: {temp_output}")
-            merged_model = BertForSequenceClassification.from_pretrained(temp_output,num_labels=self.num_labels).to(self.device)
+            merged_model = GPT2ForSequenceClassification.from_pretrained(temp_output,num_labels=self.num_labels).to(self.device)
             
             return merged_model 
         
