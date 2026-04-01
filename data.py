@@ -108,6 +108,7 @@ class Dataset:
     def get_finetuned_indices(self,valid_indices,finetuning_source):
         """
         Generate indices for the fine-tuning dataset with specified class proportions.
+        The method is not guaranteed to create the same indices for the same proportion.
         
         This method creates a fine-tuning dataset D' with controlled class distribution
         according to proportion_arr. It supports two modes:
