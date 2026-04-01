@@ -12,4 +12,6 @@ merge.ipynb
 /old_*
 /pkl_files
 /npy_files
-*/
+/ag_news_*
+/yelp_review_*
+/snli_*
