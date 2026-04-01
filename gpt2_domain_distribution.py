@@ -1,3 +1,28 @@
+"""
+GPT-2 Domain Distribution Alignment Experiment
+
+This script orchestrates a complete experiment for analyzing how different samples
+align with model fine-tuning trajectories using GPT-2 models. The experiment consists
+of several key steps:
+
+1. **Configuration Loading**: Loads experiment parameters from a JSON config file
+2. **Dataset Preparation**: Creates seed dataset D and fine-tuning dataset D'
+3. **Model Fine-tuning**: Trains GPT-2 from base to expert, saving intermediate checkpoints
+4. **Alignment Computation**: Computes alignment scores for all samples across pseudo-experts
+5. **Results Saving**: Saves alignment matrices and statistics for analysis
+
+The main workflow:
+- Load configuration from JSON (dataset, model params, class distribution)
+- Create seed dataset D (for alignment) and fine-tuning dataset D' (biased distribution)
+- Fine-tune GPT-2 base model → expert model, save K intermediate pseudo-experts
+- For each pseudo-expert, compute alignment scores for all samples in D
+- Save alignment matrix M (N×K) and per-lambda statistics
+
+Usage:
+    python gpt2_domain_distribution.py <config.json>
+    
+"""
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -10,6 +35,7 @@ import json
 from transformers import GPT2ForSequenceClassification,GPT2Config,GPT2Tokenizer
 import os 
 from datasets import load_dataset
+
 
 
 """
@@ -44,7 +70,7 @@ class Config:
     Dynamic Attributes (from JSON):
         n_total (int): Size of seed dataset for alignment computation
         n_finetune (int): Size of fine-tuning dataset
-        model_name (str): HuggingFace model identifier
+        model_name (str): HuggingFace model identifier (e.g., 'openai-community/gpt2')
         max_length (int): Maximum sequence length for tokenization
         num_labels (int): Number of classification labels
         batch_size (int): Training batch size
@@ -56,7 +82,7 @@ class Config:
         interpolations (list): List of interpolation methods to use
         optimizer (str): Optimizer name ('Adam' or 'SGD')
         dataset (str): Dataset name (e.g., 'ag_news', 'snli')
-        proportionArr (list): Target class distribution
+        proportionArr (list): Target class distribution for fine-tuning dataset
         finetuning_source (str): Source for fine-tuning samples ('select' or 'original')
         experiment_name (str): Name/path for experiment outputs
     
@@ -78,9 +104,8 @@ config = Config(config_dict)
 
 
 
-
 """
-Getting the parameters
+Extract parameters from config object for easy access
 """
 batch_size = config.batch_size 
 num_labels = config.num_labels
@@ -100,23 +125,24 @@ n_finetune = config.n_finetune
 proportionArr = config.proportionArr
 
 
+
 """
-Initializign the tokenizer and paths
+Initialize the GPT-2 tokenizer and model save paths
 """
 base_model_path = os.path.join(output_dir, 'base_model') 
 expert_model_path = os.path.join(output_dir, 'expert_model') 
 
-# all models use the same tokenizer
+# Load GPT-2 tokenizer (all models share the same tokenizer)
 print('Loading tokenizer...')
 tokenizer = GPT2Tokenizer.from_pretrained(pretrained_model_name_or_path="openai-community/gpt2")
-# default to left padding
-tokenizer.padding_side = "left"
-# Define PAD Token = EOS Token = 50256
-tokenizer.pad_token = tokenizer.eos_token
+
+# Configure tokenizer for GPT-2 classification
+tokenizer.padding_side = "left"  # Left padding is standard for GPT-2
+tokenizer.pad_token = tokenizer.eos_token  # Use EOS token (50256) as PAD token
 
 
 """
-creating the output directory
+Create output directory for saving experiment results
 """
 os.makedirs(output_dir, exist_ok=True)
 print(f"\n{'='*70}")
@@ -125,31 +151,32 @@ print(f"{'='*70}\n")
 
 
 
-
 """
-Get the dataloaders
+Load dataset and create seed dataset D and fine-tuning dataset D'
 """
 dataset  = load_dataset(dataset_name)
 train_data = dataset['train']
 print(f"Full training set size: {len(train_data)}")
 
+# Initialize Dataset handler
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
 
-
+# Get valid indices (samples with valid labels within num_labels range)
 valid_indices = d1.get_valid_indices()
 D_dataset = d1.ExperimentDataset(train_data.select(valid_indices), tokenizer, max_length,dataset_name)
 
+# Create seed dataset D (for alignment computation)
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
 seed_dataset_dataloader = d1.get_selectseed_dataloader(select_seed_indices ,batch_size,max_length)
 
+# Create fine-tuning dataset D' (with biased class distribution)
 finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
 finetuning_dataloader = d1.get_finetuning_dataloader(finetuned_indices,batch_size,max_length)
 
 
 
-
 """
-Save the dataset_info
+Save the dataset info for reproducibility
 """
 dataset_info = {
     'n_total': n_seed ,
@@ -163,27 +190,33 @@ print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
 
 
 
-print('Loading configuraiton...')
+"""
+Initialize GPT-2 models and fine-tune to create expert model
+"""
+print('Loading GPT-2 configuration...')
 model_config = GPT2Config.from_pretrained(pretrained_model_name_or_path="openai-community/gpt2", num_labels=num_labels)
 
-
-"""
-initializign the models, finetuning the base model, adn saving checkpoints
-"""
+# Initialize fine-tuning handler
 f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, D_dataset )
 
+# Create base model (θ_base) - will remain unchanged
 base_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(config.device)
 base_model.config.pad_token_id = base_model.config.eos_token_id
 
+# Create expert model (θ_exp) - will be fine-tuned on D'
 exp_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(config.device)
 exp_model.config.pad_token_id = exp_model.config.eos_token_id
 
-
-# finetuning the base model
+# Fine-tune expert model on D' and save K intermediate checkpoints
 eval_size = 5000
 f1.finetune_base(exp_model,output_dir,eval_size)
 
 
+
+
+"""
+Save base and expert models for later use and mergekit compatibility
+"""
 
 # Save the base model
 base_model.save_pretrained(base_model_path)
@@ -204,9 +237,8 @@ print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
 
 
 
-
 """
-construct the alignment scores
+Compute alignment scores for all samples across all pseudo-experts
 """
 a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr,base_model,exp_model, device)
 m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels)
@@ -215,6 +247,7 @@ for interpolation_name in config.interpolations:
     a1.generate_alignment_matrix(interpolation_name,output_dir,m1)
     
     
+
 """
 Cleaning up the directory files
 """
