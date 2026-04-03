@@ -24,17 +24,26 @@ Output:
     - {experiment_name}/dataset_info.json: Dataset indices
     - {dataset_name}_{interpolation}_{proportions}/: Alignment matrices
 """
+
+import os 
+import sys
+
+current_file = os.path.abspath(__file__)
+bert_dir = os.path.dirname(current_file)
+project_root = os.path.dirname(bert_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import torch
 import torch.nn as nn
 import numpy as np
-import sys
 from data import Dataset
 from bert_alignment import Alignment
 from bert_finetuning import Finetuning
 from bert_models import Model
 import json
 from transformers import BertTokenizer, BertForSequenceClassification
-import os 
 from datasets import load_dataset
 
 
