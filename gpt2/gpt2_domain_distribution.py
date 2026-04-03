@@ -23,17 +23,26 @@ Usage:
     
 """
 
+
+import os 
+import sys
+
+current_file = os.path.abspath(__file__)
+bert_dir = os.path.dirname(current_file)
+project_root = os.path.dirname(bert_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    
 import torch
 import torch.nn as nn
 import numpy as np
-import sys
 from data import Dataset
 from gpt2_alignment import Alignment
 from gpt2_finetuning import Finetuning
 from gpt2_models import Model
 import json
 from transformers import GPT2ForSequenceClassification,GPT2Config,GPT2Tokenizer
-import os 
 from datasets import load_dataset
 
 

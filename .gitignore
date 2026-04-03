@@ -15,3 +15,5 @@ merge.ipynb
 /ag_news_*
 /yelp_review_*
 /snli_*
+**/__pycache__
+**/__pycache__
