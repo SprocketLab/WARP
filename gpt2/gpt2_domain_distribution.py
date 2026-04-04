@@ -218,7 +218,7 @@ exp_model.config.pad_token_id = exp_model.config.eos_token_id
 
 # Fine-tune expert model on D' and save K intermediate checkpoints
 eval_size = 5000
-f1.finetune_base(exp_model,output_dir,eval_size)
+accuracy_arr = f1.finetune_base(exp_model,output_dir,eval_size)
 
 
 
@@ -243,6 +243,12 @@ print(f"✓ Expert model saved to {expert_model_path }/ (for mergekit)")
 
 torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
 print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
+
+
+patience = 1
+delta = 0.01
+accuracy_converged = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+print(f"Converged checkpoint has {accuracy_converged*100}% accuracy")
 
 
 

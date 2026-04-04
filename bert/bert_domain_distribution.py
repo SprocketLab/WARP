@@ -164,10 +164,8 @@ print(f"Full training set size: {len(train_data)}")
 
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
 
-
 valid_indices = d1.get_valid_indices()
 D_dataset = d1.ExperimentDataset(train_data.select(valid_indices), tokenizer, max_length,dataset_name)
-
 
 select_seed_indices = d1.get_select_seed_indices(valid_indices)
 seed_dataset_dataloader = d1.get_selectseed_dataloader(select_seed_indices ,batch_size,max_length)
@@ -210,7 +208,7 @@ exp_model = BertForSequenceClassification.from_pretrained(
 ).to(config.device)
         
 eval_size = 5000
-f1.finetune_base(exp_model,output_dir,eval_size)
+accuracy_arr = f1.finetune_base(exp_model,output_dir,eval_size)
 
 
 
@@ -234,6 +232,11 @@ print(f"✓ Expert model saved to {expert_model_dir}/ (for mergekit)")
 torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
 print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
 
+
+patience = 1
+delta = 0.01
+accuracy_converged = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+print(f"Converged checkpoint has {accuracy_converged*100}% accuracy")
 
 
 
