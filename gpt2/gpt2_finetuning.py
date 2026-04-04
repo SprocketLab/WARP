@@ -29,7 +29,7 @@ import pickle
 from transformers import GPT2Tokenizer, GPT2ForSequenceClassification
 from tqdm import tqdm
 import random
-import math
+import torch.nn as nn
 
 
 
@@ -195,8 +195,9 @@ class Finetuning:
                 loss, logits = outputs[:2]
                 
                 loss.backward()
-                optimizer.step()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 
+                optimizer.step()
                 total_loss += loss.item()
                 progress_bar.set_postfix({'loss': loss.item()})
             

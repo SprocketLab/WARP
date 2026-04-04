@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import os
 from torch.optim import AdamW,SGD
+import torch.nn as nn
 import pickle
 from tqdm import tqdm
 import random
@@ -142,8 +143,9 @@ class Finetuning:
                 loss = outputs.loss
                 
                 loss.backward()
-                optimizer.step()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 
+                optimizer.step()
                 total_loss += loss.item()
                 progress_bar.set_postfix({'loss': loss.item()})
             
