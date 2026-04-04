@@ -1,18 +1,67 @@
-# reverse_engineering
+# hack_model (reverse engineering training-data influence)
 
-A small research codebase for **reverse engineering / auditing training data influence** in text classification by:
-1) selecting a **seed subset** of training data,
-2) fine-tuning a base model into an **expert**,
-3) creating **pseudo-expert models** along a base→expert path (via interpolation / merging),
-4) computing a per-example **alignment matrix** using **last-layer gradients**.
+Research codebase for **sample-level hacking / reverse engineering** of training-data influence in text(-classification) fine-tuning trajectories.
 
-The code is structured into modular components:
+At a high level, the pipeline:
+1. Selects a **seed subset** \(D\) of training data.
+2. Builds a **fine-tuning subset** \(D'\) with a controlled class distribution.
+3. Fine-tunes a base model into an **expert** (saving intermediate checkpoints along the way).
+4. Constructs **pseudo-expert models** along the base → expert path (via interpolation / merge).
+5. Computes a per-example **alignment matrix** \(M\) using **last-layer gradients**.
 
-- `data.py` — dataset indexing + dataloader creation (seed subset and fine-tuning subset)
-- `finetuning.py` — fine-tune base → expert and optionally checkpoint intermediate models
-- `models.py` — model interpolation / merge utilities (includes mergekit config helpers)
-- `alignment.py` — compute alignment matrix `M` from last-layer gradients
-- `domain_distribution.py` — experiment entrypoint that wires everything together using a JSON config
+This repository currently contains two experiment implementations:
+- `bert/` — BERT sequence-classification experiments
+- `gpt2/` — GPT-2 sequence-classification experiments
+
+---
+
+## Repository structure
+
+Top-level utilities:
+
+- `data.py` — dataset indexing + dataloader creation.
+  - filters invalid labels (e.g. SNLI’s `label == -1`)
+  - selects the seed subset \(D\)
+  - constructs the fine-tuning subset \(D'\) with a target class distribution (`proportion_arr`)
+  - provides PyTorch `DataLoader`s used for fine-tuning + per-example gradient computation
+
+Notebooks:
+- `experiment.ipynb` — exploratory / interactive experiment driver
+- `Baselines.ipynb` — baseline comparisons
+- `Visualizations.ipynb` — plotting / visualization utilities
+- `edit_plots.ipynb` — plot editing / polishing
+
+Model-specific pipelines:
+
+### `bert/`
+- `bert/bert_domain_distribution.py` — **main runner** for the BERT pipeline.
+  - loads a JSON config
+  - prepares \(D\) and \(D'\) using `data.py`
+  - fine-tunes to create the expert model (and intermediate checkpoints)
+  - computes alignment matrices for each interpolation method in `config.interpolations`
+
+- `bert/bert_finetuning.py` — fine-tunes BERT base → expert and optionally saves intermediate checkpoints `model_<k>.pt`.
+
+- `bert/bert_models.py` — pseudo-expert creation utilities.
+  - linear + quadratic interpolation
+  - mergekit-based merges (if available): **SLERP**, **TIES**, **DELLA**
+
+- `bert/bert_alignment.py` — computes the alignment matrix \(M\) using **per-example last-layer gradients**.
+
+### `gpt2/`
+- `gpt2/gpt2_domain_distribution.py` — **main runner** for the GPT-2 pipeline.
+  - same overall steps as the BERT runner, but using GPT-2 classification models
+
+- `gpt2/gpt2_finetuning.py` — fine-tunes GPT-2 base → expert and saves intermediate checkpoints.
+
+- `gpt2/gpt2_models.py` — pseudo-expert creation utilities for GPT-2.
+  - linear + quadratic interpolation
+  - mergekit-based merges (if available): **SLERP**, **TIES**, **DELLA**
+
+- `gpt2/gpt2_alignment.py` — alignment matrix computation for GPT-2 using **last-layer (`score`) gradients**.
+
+Legacy:
+- `old_code/` — older scripts kept for reference (AG News class/sample hacking variants).
 
 ---
 
@@ -20,126 +69,52 @@ The code is structured into modular components:
 
 ### Install dependencies
 
-Use either pip or conda:
+Using pip:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-or
+Or using conda:
 
 ```bash
 conda env create -f enviroment.yml
 conda activate <env-name>
 ```
 
-This project expects common ML libs like:
-- `torch`
-- `transformers`
-- `datasets`
-- `numpy`
-- `tqdm`
-- `pyyaml`
-- (optional) `mergekit` (see below)
+> Note: advanced interpolation methods (SLERP/TIES/DELLA) rely on `mergekit`. The repo’s `requirements.txt` includes a mergekit editable install; if mergekit import fails, those methods will be unavailable.
 
-### Run an experiment
+---
 
-The modular entrypoint expects a JSON config:
+## Running an experiment
+
+Both pipelines are driven by a JSON config.
+
+### BERT
 
 ```bash
-python domain_distribution.py path/to/config.json
+python bert/bert_domain_distribution.py path/to/config.json
+```
+
+### GPT-2
+
+```bash
+python gpt2/gpt2_domain_distribution.py path/to/config.json
 ```
 
 Outputs are written to:
-
 - `output_dir = config.experiment_name`
 
----
-
-## How the modular pipeline works
-
-### 1) Configuration (`domain_distribution.py`)
-
-`domain_distribution.py`:
-- loads a JSON config file from `sys.argv[1]`
-- constructs a `Config` object and derives:
-  - `lambdas = np.linspace(lambda_min, lambda_max, K)`
-  - `device = cuda if available else cpu`
-- creates the output directory `config.experiment_name`
-- loads the dataset: `datasets.load_dataset(config.dataset)` and uses `dataset["train"]`
-
-### 2) Dataset subsets & dataloaders (`data.py`)
-
-`data.py` defines a `Dataset` helper class that:
-- computes `valid_indices` by filtering out samples with `label < 0` (useful for datasets like SNLI)
-- selects a seed subset **D** of size `n_seed` (`n_total` in config)
-- selects a fine-tuning subset **D'** of size `n_finetune` with a desired class distribution `proportionArr`
-- provides dataloaders used for:
-  - fine-tuning
-  - per-example gradient computations on the seed subset
-
-> Notes:
-> - `proportionArr` is checked to sum to 1.
-> - The code supports choosing the fine-tuning source via `finetuning_source` (e.g., "select" vs "original" depending on your intended experiment design).
-
-### 3) Fine-tuning (`finetuning.py`)
-
-`finetuning.py` defines `Finetuning`, which:
-- trains a `BertForSequenceClassification` on the fine-tuning loader
-- periodically checkpoints intermediate models (`model_<k>.pt`) based on a computed `batch_interval`
-- can evaluate accuracy by sampling from a provided evaluation set (superset)
-
-Typical artifacts you may save:
-- `accuracy_arr.pkl` (if you store it from the caller)
-- intermediate checkpoints `model_0.pt ... model_{K-1}.pt` (if enabled/used)
-
-### 4) Pseudo-experts / interpolation / merges (`models.py`)
-
-`models.py` defines a `Model` class that contains helpers for creating pseudo-expert models.
-It includes YAML config generation for merge methods like:
-- **SLERP**
-- **TIES**
-(and likely other mergekit-based approaches in the remainder of the file)
-
-It also attempts to import mergekit by adding a local `mergekit` directory to `sys.path`.
-
-> If mergekit is not available, the code prints a warning and merge-based interpolation paths may not work.
-
-### 5) Alignment matrix computation (`alignment.py`)
-
-`alignment.py` defines `Alignment`, which computes an alignment matrix `M` of shape:
-
-- `M.shape == (n_seed, K)`
-
-The key idea:
-- for each pseudo-expert (indexed by `k`, corresponding to `lambda_k`),
-- compute per-example gradients for **only the classifier / last layer** (parameters with `'classifier' in name`),
-- compare those gradients to a “direction” vector derived from last-layer parameter differences between models,
-- store per-example scores into the matrix.
-
-This matrix can then be used for downstream analysis (e.g., identifying which examples are most aligned with certain interpolation points).
-
----
-
-## Outputs
-
-The entrypoint currently saves (or prepares to save) artifacts like:
-
-- `dataset_info.json`
-  - `indices_D` (seed subset)
-  - `indices_D_prime` (fine-tune subset)
-  - `n_total`, `n_finetune`
-
-Other typical outputs (depending on what’s enabled in your run / scripts):
-- intermediate model checkpoints: `model_<k>.pt`
-- base/expert model directories (HF format) if you save them in your run
-- alignment matrices: `alignment_matrix_<method>.npy` (if written by the caller)
+Typical artifacts:
+- `{experiment_name}/dataset_info.json` — indices for \(D\) and \(D'\)
+- `{experiment_name}/theta_base_model.pt` — base weights
+- `{experiment_name}/theta_exp_model.pt` — expert weights
+- `{dataset}_{interpolation}_{proportionArr}/alignment_matrix_<interpolation>.npy` — alignment matrices
+- `{dataset}_{interpolation}_{proportionArr}/lambda_statistics.json` — per-λ summary stats
 
 ---
 
 ## Example config (template)
-
-Here’s a minimal template showing the kinds of fields used by `domain_distribution.py`:
 
 ```json
 {
@@ -161,17 +136,18 @@ Here’s a minimal template showing the kinds of fields used by `domain_distribu
 
   "K": 15,
   "lambda_min": 0.05,
-  "lambda_max": 0.95
+  "lambda_max": 0.95,
+
+  "interpolations": ["linear", "quadratic", "slerp", "ties", "della"]
 }
 ```
 
 ---
 
-## Notes / Caveats
+## Notes / caveats
 
-- Some modules appear to be mid-refactor (e.g., `Alignment.generate_alignment_matrix()` references `self.get_interpolated_model(...)` which must exist either later in the file or via composition with `Model`).
-- Mergekit integration depends on a local `mergekit/` folder being present and importable.
-- If you intend `domain_distribution.py` to be the “main” entrypoint, consider renaming it to something more descriptive like `run_experiment.py`.
+- The code is research-grade and some parts may be mid-refactor; if you hit a runtime error, open an issue with the traceback and config.
+- `enviroment.yml` is spelled as-is in the repo.
 
 ---
 
