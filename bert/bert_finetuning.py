@@ -5,7 +5,6 @@ from torch.optim import AdamW,SGD
 import pickle
 from tqdm import tqdm
 import random
-import math
 
 
 class Finetuning:
@@ -176,11 +175,12 @@ class Finetuning:
         
         def check_early_stop(self, val_accuracy):
             
+            if self.best_accuracy is None or val_accuracy > self.best_accuracy + self.delta:
+                self.no_improvement_count = 0
+                
             if (self.best_accuracy is None) or (val_accuracy  > self.best_accuracy):
                 self.best_accuracy = val_accuracy
-    
-            if self.best_accuracy is None or val_accuracy + self.delta > self.best_accuracy:
-                self.no_improvement_count = 0
+                
             else:
                 self.no_improvement_count += 1
                 if self.no_improvement_count >= self.patience:
@@ -223,12 +223,12 @@ class Finetuning:
             
             early_stop.check_early_stop(eval_accuracy)
             
-            if(math.abs(eval_accuracy-early_stop.best_accuracy)<0.0000001):
+            if(abs(eval_accuracy-early_stop.best_accuracy)<0.0000001):
                 torch.save(model, os.path.join(output_dir, f'converged_model_checkpoint.pt'))
                 
             if(early_stop.stop_training):
                 print(f"Stopping at Epoch: {epoch_idx+1}. Model has converged")
-                break
+                return early_stop.best_accuracy
 
             epoch_idx+=1
     
@@ -331,7 +331,10 @@ class Finetuning:
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
         
-        self.train_converged_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
+        accuracy = self.train_converged_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
+        with open(os.path.join(output_dir, 'accuracy_converged.pkl'), 'wb') as f:
+            pickle.dump(accuracy, f)
+        return accuracy   
             
     
     

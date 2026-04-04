@@ -235,7 +235,8 @@ print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
 
 patience = 1
 delta = 0.01
-f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+accuracy_converged = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+print(f"Converged checkpoint has {accuracy_converged*100}% accuracy")
 
 
 
