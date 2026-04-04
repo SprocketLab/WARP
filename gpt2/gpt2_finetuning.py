@@ -29,6 +29,7 @@ import pickle
 from transformers import GPT2Tokenizer, GPT2ForSequenceClassification
 from tqdm import tqdm
 import random
+import math
 
 
 
@@ -216,7 +217,78 @@ class Finetuning:
         return accuracy_arr
     
 
+
+
+
+    class EarlyStopping:
+        def __init__(self, patience, delta):
+            self.patience = patience
+            self.delta = delta
+            self.best_accuracy = None
+            self.no_improvement_count = 0
+            self.stop_training = False
+        
+        def check_early_stop(self, val_accuracy):
+            
+            if (self.best_accuracy is None) or (val_accuracy  > self.best_accuracy):
+                self.best_accuracy = val_accuracy
     
+            if self.best_accuracy is None or val_accuracy + self.delta > self.best_accuracy:
+                self.no_improvement_count = 0
+            else:
+                self.no_improvement_count += 1
+                if self.no_improvement_count >= self.patience:
+                    self.stop_training = True
+                    print("Stopping early as no improvement has been observed.")
+                
+                
+    def train_converged_model(self,model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy):
+        model.train()
+        epoch_idx = 0
+        
+        early_stop = self.EarlyStopping(patience,delta)
+        
+        while(True):
+            
+            total_loss = 0
+            
+            for batch in self.finetuning_data_loader:
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                
+                optimizer.zero_grad()
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                loss, logits = outputs[:2]
+                
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+            
+            # avg_loss = total_loss / len(self.finetuning_data_loader)
+                
+            eval_accuracy = self.eval(model,self.device,eval_size)
+            model.train()
+            
+            if(epoch_idx==0 and eval_accuracy<initial_accuracy):
+                print("The given checkpoint is already comverged")
+                break
+            
+            early_stop.check_early_stop(eval_accuracy)
+            
+            if(math.abs(eval_accuracy-early_stop.best_accuracy)<0.0000001):
+                torch.save(model, os.path.join(output_dir, f'converged_model_checkpoint.pt'))
+                
+            if(early_stop.stop_training):
+                print(f"Stopping at Epoch: {epoch_idx+1}. Model has converged")
+                break
+
+            epoch_idx+=1
+
+
+
+
 
     """
     Fine-tuning the base model
@@ -272,7 +344,47 @@ class Finetuning:
         accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer)
 
         with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
-            pickle.dump(accuracy_arr, f)    
+            pickle.dump(accuracy_arr, f)   
+        
+        return accuracy_arr   
     
 
 
+    """
+    Additional training
+    """
+    def addt_finetune(self,theta_exp_model,output_dir,eval_size,patience,delta,initial_accuracy):
+        """
+        Perform additional fine-tuning on D' to obtain the converged model
+
+        Configures optimizer (AdamW or SGD), logs training setup, and invokes
+        convergence-based training with early stopping.
+
+        Args:
+            theta_exp_model: Model to fine-tune.
+            output_dir: Directory to save checkpoints and outputs.
+            eval_size: Validation set size for evaluation.
+            patience (int): Early stopping patience.
+            delta (float): Minimum improvement threshold.
+            initial_accuracy (float): Baseline metric for comparison.
+        """
+
+        print("\n" + "="*70)
+        print("STEP 3: Fine-tuning on D' to Create Expert Model (θ_exp)")
+        print("="*70)
+
+        if(self.optimizer=="Adam"):
+            # for adaptive learning rates
+            optimizer = AdamW(theta_exp_model.parameters(), lr=self.learning_rate)
+        else:
+            # for static learning rate
+            optimizer = SGD(theta_exp_model.parameters(), lr=self.learning_rate)
+            
+        print(f"Fine-tuning configuration:")
+        print(f"  Learning rate: {self.learning_rate}")
+        print(f"  Batch size: {self.batch_size}")
+        print(f"  Epochs: {self.epochs}")
+        print(f"  Training samples: {self.n_finetune}")
+        print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
+        
+        self.train_converged_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
