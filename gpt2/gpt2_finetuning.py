@@ -282,7 +282,7 @@ class Finetuning:
             early_stop.check_early_stop(eval_accuracy)
             
             if(abs(eval_accuracy-early_stop.best_accuracy)<0.0000001):
-                torch.save(model, os.path.join(output_dir, f'converged_model_checkpoint.pt'))
+                torch.save(model, os.path.join(output_dir, f'converged_checkpoint.pt'))
                 
             if(early_stop.stop_training):
                 print(f"Stopping at Epoch: {epoch_idx+1}. Model has converged")
