@@ -181,32 +181,10 @@ class Finetuning:
             """
             self.patience = patience
             self.delta = delta
-            self.best_accuracy = None
+            self.best_loss = None
             self.no_improvement_count = 0
             self.stop_training = False
         
-        def check_early_stop(self, val_accuracy):
-            """
-            Check if training should stop based on validation accuracy.
-            
-            Resets counter if improvement >= delta, otherwise increments counter.
-            Triggers stopping when counter reaches patience
-                    
-            Args:
-                val_accuracy (float): Current validation accuracy [0, 1]
-            """
-            if self.best_accuracy is None or val_accuracy > self.best_accuracy + self.delta:
-                self.no_improvement_count = 0
-                
-            if (self.best_accuracy is None) or (val_accuracy  > self.best_accuracy):
-                self.best_accuracy = val_accuracy
-                
-            else:
-                self.no_improvement_count += 1
-                if self.no_improvement_count >= self.patience:
-                    self.stop_training = True
-                    print("Stopping early as no improvement has been observed.")
-                    
     def check_early_stop(self, train_loss):
         """
         Check if training should stop based on training loss.

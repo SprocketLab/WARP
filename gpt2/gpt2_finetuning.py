@@ -340,7 +340,7 @@ class Finetuning:
     """
     Fine-tuning the base model
     """
-    def finetune_base(self,theta_exp_model,output_dir,eval_size,max_epochs):
+    def finetune_base(self,theta_exp_model,output_dir,eval_size,epochs):
         """
         Fine-tune a base GPT-2 model to create an expert model on the specialized dataset.
         
@@ -388,10 +388,7 @@ class Finetuning:
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
 
-        accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer)
-
-        with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
-            pickle.dump(accuracy_arr, f)   
+        accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer,epochs)
         
         return accuracy_arr   
     
@@ -435,7 +432,5 @@ class Finetuning:
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
         
         # Best accuracy is none when there is no new checkpoint with the best val accuracy
-        accuracy = self.train_overtrained_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
-        with open(os.path.join(output_dir, 'accuracy_converged.pkl'), 'wb') as f:
-            pickle.dump(accuracy, f)
-        return accuracy   
+        accuracy_overtrained_arr = self.train_overtrained_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
+        return accuracy_overtrained_arr
