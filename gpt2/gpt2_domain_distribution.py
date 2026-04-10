@@ -268,7 +268,7 @@ Finetune to get the overtrained model
 patience = 1
 delta = 0.01
 accuracy_arr_overtrained = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
-print(f"overtrained checkpoint has {accuracy_arr_overtrained*100}% accuracy")
+print(f"overtrained checkpoint has {accuracy_arr_overtrained[-1]*100}% accuracy")
 
 with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
     pl.dump(accuracy_arr_overtrained, f)

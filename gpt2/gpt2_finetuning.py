@@ -239,31 +239,31 @@ class Finetuning:
             self.no_improvement_count = 0
             self.stop_training = False
         
-    def check_early_stop(self, train_loss):
-        """
-        Check if training should stop based on training loss.
-        
-        Resets counter if loss reduction >= delta, otherwise increments counter.
-        Triggers stopping when counter reaches patience.
-        
-        Args:
-            train_loss (float): Current epoch's average training loss
-        """
-        # Initialize on first call
-        if self.best_loss is None:
-            self.best_loss = train_loss
-            return
-        
-        # Reset counter if significant loss reduction (> delta)
-        if train_loss < self.best_loss - self.delta:
-            self.best_loss = train_loss
-            self.no_improvement_count = 0
-        else:
-            # No significant improvement - increment counter
-            self.no_improvement_count += 1
-            if self.no_improvement_count >= self.patience:
-                self.stop_training = True
-                print(f"Early stopping: No loss reduction > {self.delta} for {self.patience} epochs.")
+        def check_early_stop(self, train_loss):
+            """
+            Check if training should stop based on training loss.
+            
+            Resets counter if loss reduction >= delta, otherwise increments counter.
+            Triggers stopping when counter reaches patience.
+            
+            Args:
+                train_loss (float): Current epoch's average training loss
+            """
+            # Initialize on first call
+            if self.best_loss is None:
+                self.best_loss = train_loss
+                return
+            
+            # Reset counter if significant loss reduction (> delta)
+            if train_loss < self.best_loss - self.delta:
+                self.best_loss = train_loss
+                self.no_improvement_count = 0
+            else:
+                # No significant improvement - increment counter
+                self.no_improvement_count += 1
+                if self.no_improvement_count >= self.patience:
+                    self.stop_training = True
+                    print(f"Early stopping: No loss reduction > {self.delta} for {self.patience} epochs.")
                 
                 
     def train_overtrained_model(self,model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy):
