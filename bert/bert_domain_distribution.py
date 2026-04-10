@@ -45,6 +45,7 @@ from bert_models import Model
 import json
 from transformers import BertTokenizer, BertForSequenceClassification
 from datasets import load_dataset
+import pickle as pl
 
 
 """
@@ -207,36 +208,64 @@ exp_model = BertForSequenceClassification.from_pretrained(
     num_labels=config.num_labels
 ).to(config.device)
         
+        
+        
+        
+"""
+Finetune to get the expert model
+"""     
 eval_size = 5000
-accuracy_arr = f1.finetune_base(exp_model,output_dir,eval_size)
+accuracy_arr = f1.finetune_base(exp_model,output_dir,eval_size,epochs)
 
-
-
+with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
+    pl.dump(accuracy_arr, f)
 
 # Save the base model
-base_model_dir = os.path.join(output_dir, 'base_model')
-base_model.save_pretrained(base_model_dir)
-tokenizer.save_pretrained(base_model_dir)
-print(f"✓ Base model saved to {base_model_dir}/ (for mergekit)")
+base_model.save_pretrained(base_model_path)
+tokenizer.save_pretrained(base_model_path)
+print(f"✓ Base model saved to {base_model_path}/ (for mergekit)")
 
 torch.save(base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
 print(f"✓ Base state dict saved to {output_dir}/theta_base_model.pt")
 
 
 # Save the expert model
-expert_model_dir = os.path.join(output_dir, 'expert_model')
-exp_model.save_pretrained(expert_model_dir)
-tokenizer.save_pretrained(expert_model_dir)
-print(f"✓ Expert model saved to {expert_model_dir}/ (for mergekit)")
+exp_model.save_pretrained(expert_model_path)
+tokenizer.save_pretrained(expert_model_path)
+print(f"✓ Expert model saved to {expert_model_path}/ (for mergekit)")
 
 torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
 print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
 
 
+
+"""
+Finetune to get the converged model
+"""
+max_epochs = 5 # 5 additonal epochs for training
+accuracy_arr_converged = f1.finetune_base(exp_model,output_dir,eval_size,max_epochs)
+
+with open(os.path.join(output_dir, 'accuracy_arr_converged.pkl'), 'wb') as f:
+    pl.dump(accuracy_arr_converged, f)
+    
+torch.save(exp_model.state_dict(), os.path.join(output_dir, 'converged_model.pt'))
+print(f"✓ converged state dict saved to {output_dir}/converged_model.pt")
+
+
+
+
+"""
+Finetune to get the overtrained model
+"""
 patience = 1
 delta = 0.01
-accuracy_converged = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
-print(f"Converged checkpoint has {accuracy_converged*100}% accuracy")
+accuracy_arr_overtrained = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+print(f"overtrained checkpoint has {accuracy_arr_overtrained*100}% accuracy")
+
+with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
+    pl.dump(accuracy_arr_overtrained, f)
+
+
 
 
 

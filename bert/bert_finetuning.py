@@ -3,7 +3,7 @@ import torch
 import os
 from torch.optim import AdamW,SGD
 import torch.nn as nn
-import pickle
+import pickle as pl
 from tqdm import tqdm
 import random
 
@@ -87,7 +87,7 @@ class Finetuning:
     
 
     # Training function
-    def train_model(self,model, output_dir,eval_size,optimizer):
+    def train_model(self,model, output_dir,eval_size,optimizer,no_of_epochs):
         """
         Train the model and save intermediate checkpoints as pseudo-experts.
         
@@ -119,7 +119,7 @@ class Finetuning:
         """
         accuracy_arr = []
         model.train()
-        batch_interval = round((self.epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
+        batch_interval = round((no_of_epochs*len(self.finetuning_data_loader))/((self.no_of_pseudoexperts + 1)))
         print("Batch Interval: " + str(batch_interval))
         num_batch = 0
         num_model = 0
@@ -128,10 +128,10 @@ class Finetuning:
         # torch.save(model, os.path.join(output_dir, f'model_{num_model}.pt'))
         # accuracy_arr.append(eval(model,device))
         
-        for epoch in range(self.epochs):
+        for epoch in range(no_of_epochs):
             total_loss = 0
             # tqdm is compatible with any iterable
-            progress_bar = tqdm(self.finetuning_data_loader, desc=f"Epoch {epoch+1}/{self.epochs}")
+            progress_bar = tqdm(self.finetuning_data_loader, desc=f"Epoch {epoch+1}/{no_of_epochs}")
             
             for batch in progress_bar:
                 input_ids = batch['input_ids'].to(self.device)
@@ -168,7 +168,17 @@ class Finetuning:
     
     
     class EarlyStopping:
+        """
+        Monitors validation accuracy and triggers early stopping when improvement plateaus.
+        
+        Stops training after 'patience' epochs without improvement exceeding 'delta' threshold.
+        """
         def __init__(self, patience, delta):
+            """
+            Args:
+                patience (int): Epochs to wait without improvement before stopping
+                delta (float): Minimum improvement threshold (e.g., 0.001 = 0.1%)
+            """
             self.patience = patience
             self.delta = delta
             self.best_accuracy = None
@@ -176,7 +186,15 @@ class Finetuning:
             self.stop_training = False
         
         def check_early_stop(self, val_accuracy):
+            """
+            Check if training should stop based on validation accuracy.
             
+            Resets counter if improvement >= delta, otherwise increments counter.
+            Triggers stopping when counter reaches patience
+                    
+            Args:
+                val_accuracy (float): Current validation accuracy [0, 1]
+            """
             if self.best_accuracy is None or val_accuracy > self.best_accuracy + self.delta:
                 self.no_improvement_count = 0
                 
@@ -188,13 +206,59 @@ class Finetuning:
                 if self.no_improvement_count >= self.patience:
                     self.stop_training = True
                     print("Stopping early as no improvement has been observed.")
+                    
+    def check_early_stop(self, train_loss):
+        """
+        Check if training should stop based on training loss.
+        
+        Resets counter if loss reduction >= delta, otherwise increments counter.
+        Triggers stopping when counter reaches patience.
+        
+        Args:
+            train_loss (float): Current epoch's average training loss
+        """
+        # Initialize on first call
+        if self.best_loss is None:
+            self.best_loss = train_loss
+            return
+        
+        # Reset counter if significant loss reduction (> delta)
+        if train_loss < self.best_loss - self.delta:
+            self.best_loss = train_loss
+            self.no_improvement_count = 0
+        else:
+            # No significant improvement - increment counter
+            self.no_improvement_count += 1
+            if self.no_improvement_count >= self.patience:
+                self.stop_training = True
+                print(f"Early stopping: No loss reduction > {self.delta} for {self.patience} epochs.")
                 
                 
-    def train_converged_model(self,model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy):
+    def train_overtrained_model(self,model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy):
+        """
+        Train model until convergence using early stopping.
+        
+        Trains for full epochs, evaluating after each. Saves best checkpoint and stops
+        when accuracy plateaus for 'patience' epochs.
+        
+        Args:
+            model: bert model to train
+            output_dir (str): Directory for checkpoint saves
+            eval_size (int): Validation set size
+            optimizer: PyTorch optimizer (Adam/SGD)
+            patience (int): Early stopping patience
+            delta (float): Minimum improvement threshold
+            initial_accuracy (float): Baseline to verify training improves
+            
+        Returns:
+            float: Best validation accuracy achieved
+        """
         model.train()
         epoch_idx = 0
         
         early_stop = self.EarlyStopping(patience,delta)
+        
+        accuracy_arr = []
         
         while(True):
             
@@ -219,20 +283,21 @@ class Finetuning:
             # avg_loss = total_loss / len(self.finetuning_data_loader)
                 
             eval_accuracy = self.eval(model,self.device,eval_size)
+            accuracy_arr.append(eval_accuracy)
             model.train()
             
             if(epoch_idx==0 and eval_accuracy<initial_accuracy):
                 print("The given checkpoint is already comverged")
                 break
             
-            early_stop.check_early_stop(eval_accuracy)
+            early_stop.check_early_stop(total_loss)
             
-            if(abs(eval_accuracy-early_stop.best_accuracy)<0.0000001):
-                torch.save(model, os.path.join(output_dir, f'converged_checkpoint.pt'))
+            if(abs(total_loss-early_stop.best_loss)<0.0000001):
+                torch.save(model, os.path.join(output_dir, f'overtrained_checkpoint.pt'))
                 
             if(early_stop.stop_training):
                 print(f"Stopping at Epoch: {epoch_idx+1}. Model has converged")
-                return early_stop.best_accuracy
+                return accuracy_arr
 
             epoch_idx+=1
     
@@ -242,7 +307,7 @@ class Finetuning:
     """
     Fine-tuning the base model
     """
-    def finetune_base(self,theta_exp_model,output_dir,eval_size):
+    def finetune_base(self,theta_exp_model,output_dir,eval_size,no_of_epochs):
         """
         Fine-tune a base model to create an expert model on the specialized dataset.
         
@@ -290,11 +355,9 @@ class Finetuning:
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
         
-        accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer)
-        
-        with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
-            pickle.dump(accuracy_arr, f)
-        return accuracy_arr    
+        accuracy_arr = self.train_model(theta_exp_model,output_dir,eval_size,optimizer,no_of_epochs)
+            
+        return accuracy_arr
             
            
            
@@ -335,10 +398,9 @@ class Finetuning:
         print(f"  Training samples: {self.n_finetune}")
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
         
-        accuracy = self.train_converged_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
-        with open(os.path.join(output_dir, 'accuracy_converged.pkl'), 'wb') as f:
-            pickle.dump(accuracy, f)
-        return accuracy   
+        accuracy_arr = self.train_overtrained_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
+
+        return accuracy_arr
             
     
     
