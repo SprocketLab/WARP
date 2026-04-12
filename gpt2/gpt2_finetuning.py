@@ -291,6 +291,7 @@ class Finetuning:
         early_stop = self.EarlyStopping(patience,delta)
         
         accuracy_arr = []
+        loss_arr = []
         
         while(True):
             
@@ -318,9 +319,7 @@ class Finetuning:
             accuracy_arr.append(eval_accuracy)
             model.train()
             
-            if(epoch_idx==0 and eval_accuracy<initial_accuracy):
-                print("The given checkpoint is already comverged")
-                break
+            loss_arr.append(total_loss)
             
             early_stop.check_early_stop(total_loss)
             
@@ -329,7 +328,7 @@ class Finetuning:
                 
             if(early_stop.stop_training):
                 print(f"Stopping at Epoch: {epoch_idx+1}. Model has converged")
-                return accuracy_arr
+                return accuracy_arr,loss_arr
 
             epoch_idx+=1
 
@@ -432,5 +431,5 @@ class Finetuning:
         print(f"  Batches per epoch: {len(self.finetuning_data_loader)}")
         
         # Best accuracy is none when there is no new checkpoint with the best val accuracy
-        accuracy_overtrained_arr = self.train_overtrained_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
-        return accuracy_overtrained_arr
+        accuracy_overtrained_arr, loss_overtrained_arr = self.train_overtrained_model(theta_exp_model, output_dir,eval_size,optimizer,patience,delta,initial_accuracy)
+        return accuracy_overtrained_arr,loss_overtrained_arr
