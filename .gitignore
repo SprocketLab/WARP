@@ -17,3 +17,4 @@ merge.ipynb
 /snli_*
 **/__pycache__
 **/__pycache__
+*.png
