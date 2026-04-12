@@ -265,14 +265,20 @@ print(f"✓ converged state dict saved to {output_dir}/converged_model.pt")
 """
 Finetune to get the overtrained model
 """
-patience = 1
-delta = 0.01
-accuracy_arr_overtrained = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
-print(f"overtrained checkpoint has {accuracy_arr_overtrained[-1]*100}% accuracy")
 
+# we are setting the patience so high and the delta low to ensure that the model is absolutely overtrained
+patience = 5
+delta = 0.003
+accuracy_arr_overtrained , loss_overtrained_arr = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+
+# the accuracy in the accuracy arr is per epoch
 with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
     pl.dump(accuracy_arr_overtrained, f)
 
+# the loss is also per epoch. the saved checkpoints loss is the least among the loss array 
+# and it will be at loss_arr[len(arr)-1 - patience]
+with open(os.path.join(output_dir, 'loss_arr_overtrained.pkl'), 'wb') as f:
+    pl.dump(loss_overtrained_arr, f)
 
 
 
