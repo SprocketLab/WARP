@@ -163,8 +163,14 @@ print(f"{'='*70}\n")
 """
 Load dataset and create seed dataset D and fine-tuning dataset D'
 """
-dataset  = load_dataset(dataset_name)
+
+if(dataset_name == "yelp_review"):
+    dataset = load_dataset("yelp/yelp_review_full")
+else:
+    dataset = load_dataset(dataset_name)
+
 train_data = dataset['train']
+
 print(f"Full training set size: {len(train_data)}")
 
 # Initialize Dataset handler

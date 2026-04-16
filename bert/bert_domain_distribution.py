@@ -159,8 +159,13 @@ print(f"{'='*70}\n")
 Get the dataloaders
 """
 
-dataset  = load_dataset(dataset_name)
+if(dataset_name == "yelp_review"):
+    dataset = load_dataset("yelp/yelp_review_full")
+else:
+    dataset = load_dataset(dataset_name)
+
 train_data = dataset['train']
+
 print(f"Full training set size: {len(train_data)}")
 
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
