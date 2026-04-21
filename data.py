@@ -155,7 +155,7 @@ class Dataset:
                 proportion = self.proportion_arr[label]
                 available = len(labels_indices[label])
                 samples_needed = int(np.ceil(proportion * self.n_finetune))
-                print(f"Label {label}....samples needed {samples_needed}.....needed proportion: {proportion}....actual proportion: {samples_needed/config.n_finetune}")
+                print(f"Label {label}....samples needed {samples_needed}.....needed proportion: {proportion}....actual proportion: {samples_needed/self.n_finetune}")
                 if(samples_needed>available):
                     print(f"Datapoints for class {label} are less. Pls lessen the proportion")
                     exit(1)
@@ -242,12 +242,14 @@ class Dataset:
                     - 'attention_mask': Attention mask (shape: [max_length])
                     - 'labels': Class label as a long tensor
             """
-            text = self.data[idx]['text']
         
             if(self.dataset_name == "snli"):
                 premise = self.data[idx]['premise']
                 hypothesis = self.data[idx]['hypothesis']
                 text = f"Premis: {premise} Hypothesis: {hypothesis}"
+                
+            else:
+                text = self.data[idx]['text']
                 
             label = self.data[idx]['label']
             
