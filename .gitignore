@@ -18,4 +18,4 @@ merge.ipynb
 **/__pycache__
 **/__pycache__
 *.png
-baselines_other.ipynb
+baselines_*.ipynb
