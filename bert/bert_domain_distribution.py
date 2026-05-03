@@ -248,38 +248,38 @@ print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
 
 
 
-"""
-Finetune to get the converged model
-"""
-max_epochs = 5 # 5 additonal epochs for training
-accuracy_arr_converged = f1.finetune_base(exp_model,output_dir,eval_size,max_epochs)
+# """
+# Finetune to get the converged model
+# """
+# max_epochs = 5 # 5 additonal epochs for training
+# accuracy_arr_converged = f1.finetune_base(exp_model,output_dir,eval_size,max_epochs)
 
-with open(os.path.join(output_dir, 'accuracy_arr_converged.pkl'), 'wb') as f:
-    pl.dump(accuracy_arr_converged, f)
+# with open(os.path.join(output_dir, 'accuracy_arr_converged.pkl'), 'wb') as f:
+#     pl.dump(accuracy_arr_converged, f)
     
-torch.save(exp_model.state_dict(), os.path.join(output_dir, 'converged_model.pt'))
-print(f"✓ converged state dict saved to {output_dir}/converged_model.pt")
+# torch.save(exp_model.state_dict(), os.path.join(output_dir, 'converged_model.pt'))
+# print(f"✓ converged state dict saved to {output_dir}/converged_model.pt")
 
 
 
 
-"""
-Finetune to get the overtrained model
-"""
+# """
+# Finetune to get the overtrained model
+# """
 
-# we are setting the patience so high and the delta low to ensure that the model is absolutely overtrained
-patience = 5
-delta = 0.003
-accuracy_arr_overtrained,loss_overtrained_arr = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
+# # we are setting the patience so high and the delta low to ensure that the model is absolutely overtrained
+# patience = 5
+# delta = 0.003
+# accuracy_arr_overtrained,loss_overtrained_arr = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
 
-# the accuracy in the accuracy arr is per epoch
-with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
-    pl.dump(accuracy_arr_overtrained, f)
+# # the accuracy in the accuracy arr is per epoch
+# with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
+#     pl.dump(accuracy_arr_overtrained, f)
 
-# the loss is also per epoch. the saved checkpoints loss is the least among the loss array 
-# and it will be at loss_arr[len(arr)-1 - patience]
-with open(os.path.join(output_dir, 'loss_arr_overtrained.pkl'), 'wb') as f:
-    pl.dump(loss_overtrained_arr, f)
+# # the loss is also per epoch. the saved checkpoints loss is the least among the loss array 
+# # and it will be at loss_arr[len(arr)-1 - patience]
+# with open(os.path.join(output_dir, 'loss_arr_overtrained.pkl'), 'wb') as f:
+#     pl.dump(loss_overtrained_arr, f)
 
 
 
