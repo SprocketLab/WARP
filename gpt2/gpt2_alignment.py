@@ -294,6 +294,12 @@ class Alignment:
         print(f"  Global Max:  {M.max():.6f}")
 
 
+        # alignment_matrix_dir = f"./results_align_matrix/gpt2/{self.dataset_name}/{self.dataset_name}_{interpolation_name}_{self.proportion_arr}"
+        # # Save alignment matrix
+        # os.makedirs(alignment_matrix_dir, exist_ok=True)
+        # np.save(os.path.join(alignment_matrix_dir , f'alignment_matrix_{interpolation_name}_converged.npy'), M)
+        # print(f"✓ Alignment matrix M saved to {alignment_matrix_dir}/alignment_matrix_{interpolation_name}_converged.npy")
+        
         alignment_matrix_dir = f"{self.dataset_name}_{interpolation_name}_{self.proportion_arr}"
         # Save alignment matrix
         os.makedirs(alignment_matrix_dir, exist_ok=True)
@@ -312,6 +318,11 @@ class Alignment:
                 'max': float(col_scores.max())
             })
 
+        # lambda_stats_dir = f"./results_datainfo/gpt2/{self.dataset_name}/{self.dataset_name}_{interpolation_name}_{self.proportion_arr}"
+        # with open(os.path.join(alignment_matrix_dir, 'lambda_statistics_converged.json'), 'w') as f:
+        #     json.dump(lambda_stats, f, indent=2)
+        # print(f"✓ Lambda statistics saved to {alignment_matrix_dir}/lambda_statistics_converged.json")
+        
         with open(os.path.join(alignment_matrix_dir, 'lambda_statistics.json'), 'w') as f:
             json.dump(lambda_stats, f, indent=2)
         print(f"✓ Lambda statistics saved to {alignment_matrix_dir}/lambda_statistics.json")
