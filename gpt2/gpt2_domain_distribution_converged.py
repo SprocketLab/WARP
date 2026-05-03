@@ -43,6 +43,7 @@ from gpt2_finetuning import Finetuning
 from gpt2_models import Model
 import json
 from transformers import GPT2ForSequenceClassification,GPT2Config,GPT2Tokenizer
+from transformers import AutoModelForCausalLM
 from datasets import load_dataset
 import pickle as pl
 
@@ -119,14 +120,10 @@ Extract parameters from config object for easy access
 batch_size = config.batch_size 
 num_labels = config.num_labels
 max_length = config.max_length
-epochs = config.num_epochs
-finetuning_source = config.finetuning_source
-learning_rate = config.learning_rate
 device = config.device
-optimizer_name = config.optimizer
 no_of_pseudoexperts = config.K
 model_name = config.model_name
-output_dir = config.experiment_name
+experiment_name = config.experiment_name
 num_labels = config.num_labels
 dataset_name = config.dataset
 n_seed = config.n_total 
@@ -134,12 +131,14 @@ n_finetune = config.n_finetune
 proportionArr = config.proportionArr
 
 
+output_dir = f"results_datainfo/{model_name}/{dataset_name}/{experiment_name}"
+
 
 """
 Initialize the GPT-2 tokenizer and model save paths
 """
 base_model_path = os.path.join(output_dir, 'base_model') 
-expert_model_path = os.path.join(output_dir, 'expert_model') 
+# expert_model_path = os.path.join(output_dir, 'expert_model') 
 
 # Load GPT-2 tokenizer (all models share the same tokenizer)
 print('Loading tokenizer...')
@@ -150,14 +149,6 @@ tokenizer.padding_side = "left"  # Left padding is standard for GPT-2
 tokenizer.pad_token = tokenizer.eos_token  # Use EOS token (50256) as PAD token
 
 
-"""
-Create output directory for saving experiment results
-"""
-os.makedirs(output_dir, exist_ok=True)
-print(f"\n{'='*70}")
-print(f"Output directory created: {output_dir}")
-print(f"{'='*70}\n")
-
 
 
 """
@@ -166,154 +157,62 @@ Load dataset and create seed dataset D and fine-tuning dataset D'
 
 if(dataset_name == "yelp_review"):
     dataset = load_dataset("yelp/yelp_review_full")
-    
-elif(dataset_name=="yahoo_answers"):
-    dataset = load_dataset('mteb/yahoo_answers_topics')
-
 else:
     dataset = load_dataset(dataset_name)
 
 train_data = dataset['train']
 
-print(f"Full training set size: {len(train_data)}")
+# print(f"Full training set size: {len(train_data)}")
 
-# Initialize Dataset handler
+# # Initialize Dataset handler
 d1 = Dataset(tokenizer,train_data,n_seed,n_finetune,proportionArr,num_labels,dataset_name)
 
-# Get valid indices (samples with valid labels within num_labels range)
-valid_indices = d1.get_valid_indices()
-D_dataset = d1.ExperimentDataset(train_data.select(valid_indices), tokenizer, max_length,dataset_name)
+# the output_dir here will be the datainfo directory for the gpt and ag_news and the specific proportion
+with open(os.path.join(output_dir, 'dataset_info.json'), 'r') as f:
+    select_seed_indices = json.load(f)['indices_D']
 
-# Create seed dataset D (for alignment computation)
-select_seed_indices = d1.get_select_seed_indices(valid_indices)
 seed_dataset_dataloader = d1.get_selectseed_dataloader(select_seed_indices ,batch_size,max_length)
-
-# Create fine-tuning dataset D' (with biased class distribution)
-finetuned_indices = d1.get_finetuned_indices(valid_indices,finetuning_source)
-finetuning_dataloader = d1.get_finetuning_dataloader(finetuned_indices,batch_size,max_length)
+print(seed_dataset_dataloader)
 
 
 
-"""
-Save the dataset info for reproducibility
-"""
-dataset_info = {
-    'n_total': n_seed ,
-    'n_finetune': n_finetune,
-    'indices_D': select_seed_indices,   # indices of select seed dataset
-    'indices_D_prime': finetuned_indices,  # indices of fine-tuning dataset
-}
-with open(os.path.join(output_dir, 'dataset_info.json'), 'w') as f:
-    json.dump(dataset_info, f, indent=2)
-print(f"\n✓ Dataset info saved to {output_dir}/dataset_info.json")
-
-
-
-"""
-Initialize GPT-2 models and fine-tune to create expert model
-"""
+# """
+# Initialize GPT-2 models and fine-tune to create expert model
+# """
 print('Loading GPT-2 configuration...')
 model_config = GPT2Config.from_pretrained(pretrained_model_name_or_path="openai-community/gpt2", num_labels=num_labels)
 
-# Initialize fine-tuning handler
-f1 = Finetuning(n_finetune, learning_rate, batch_size, epochs, optimizer_name,finetuning_dataloader, device, no_of_pseudoexperts, D_dataset )
 
 # Create base model (θ_base) - will remain unchanged
 base_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(config.device)
 base_model.config.pad_token_id = base_model.config.eos_token_id
 
-# Create expert model (θ_exp) - will be fine-tuned on D'
-exp_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(config.device)
-exp_model.config.pad_token_id = exp_model.config.eos_token_id
 
 
+converged_model = GPT2ForSequenceClassification.from_pretrained("openai-community/gpt2",config=model_config).to(config.device)
+converged_model.config.pad_token_id = converged_model.config.eos_token_id
 
+converged_model_state_dict = torch.load(f"{output_dir}/converged_model.pt", weights_only=False)
+converged_model.load_state_dict(converged_model_state_dict)
 
-"""
-Finetune to get the expert model
-"""     
-eval_size = 5000
-accuracy_arr = f1.finetune_base(exp_model,output_dir,eval_size,epochs)
+converged_model_path = os.path.join(output_dir, 'converged_model') 
 
-with open(os.path.join(output_dir, 'accuracy_arr.pkl'), 'wb') as f:
-    pl.dump(accuracy_arr, f)
+tokenizer.save_pretrained(converged_model_path)
+converged_model.save_pretrained(converged_model_path)
 
-# Save the base model
-base_model.save_pretrained(base_model_path)
-tokenizer.save_pretrained(base_model_path)
-print(f"✓ Base model saved to {base_model_path}/ (for mergekit)")
-
-torch.save(base_model.state_dict(), os.path.join(output_dir, 'theta_base_model.pt'))
-print(f"✓ Base state dict saved to {output_dir}/theta_base_model.pt")
-
-
-# Save the expert model
-exp_model.save_pretrained(expert_model_path)
-tokenizer.save_pretrained(expert_model_path)
-print(f"✓ Expert model saved to {expert_model_path}/ (for mergekit)")
-
-torch.save(exp_model.state_dict(), os.path.join(output_dir, 'theta_exp_model.pt'))
-print(f"✓ Expert state dict saved to {output_dir}/theta_exp_model.pt")
-
-
-
-# """
-# Finetune to get the converged model
-# """
-# max_epochs = 5 # 5 additonal epochs for training
-# accuracy_arr_converged = f1.finetune_base(exp_model,output_dir,eval_size,max_epochs)
-
-# with open(os.path.join(output_dir, 'accuracy_arr_converged.pkl'), 'wb') as f:
-#     pl.dump(accuracy_arr_converged, f)
-    
-# torch.save(exp_model.state_dict(), os.path.join(output_dir, 'converged_model.pt'))
-# print(f"✓ converged state dict saved to {output_dir}/converged_model.pt")
-
-
-
-
-# """
-# Finetune to get the overtrained model
-# """
-
-# # we are setting the patience so high and the delta low to ensure that the model is absolutely overtrained
-# patience = 5
-# delta = 0.003
-# accuracy_arr_overtrained , loss_overtrained_arr = f1.addt_finetune(exp_model,output_dir,eval_size,patience,delta,accuracy_arr[-1])
-
-# # the accuracy in the accuracy arr is per epoch
-# with open(os.path.join(output_dir, 'accuracy_arr_overtrained.pkl'), 'wb') as f:
-#     pl.dump(accuracy_arr_overtrained, f)
-
-# # the loss is also per epoch. the saved checkpoints loss is the least among the loss array 
-# # and it will be at loss_arr[len(arr)-1 - patience]
-# with open(os.path.join(output_dir, 'loss_arr_overtrained.pkl'), 'wb') as f:
-#     pl.dump(loss_overtrained_arr, f)
-
-
-
-
-
+converged_model.eval()
 
 
 """
 Compute alignment scores for all samples across all pseudo-experts
 """
-a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr,base_model,exp_model, device)
-m1 = Model(tokenizer,base_model_path,expert_model_path,no_of_pseudoexperts,device,model_name,num_labels)
+a1 = Alignment(n_seed, no_of_pseudoexperts, config.lambdas, seed_dataset_dataloader, dataset_name, proportionArr,base_model,converged_model, device)
+m1 = Model(tokenizer,base_model_path,converged_model_path,no_of_pseudoexperts,device,model_name,num_labels)
 
-for interpolation_name in config.interpolations:
-    a1.generate_alignment_matrix(interpolation_name,output_dir,m1)
-    
+# for interpolation_name in config.interpolations:
+a1.generate_alignment_matrix("ties",output_dir,m1)
     
 
-"""
-Cleaning up the directory files
-"""
-for filename in os.listdir(output_dir):
-    file_path = os.path.join(output_dir, filename)
-    if os.path.isfile(file_path) and ".pt" in filename and "model_" in filename:
-        os.remove(file_path)
 
 print("\n" + "="*70)
 print("EXPERIMENT COMPLETE - Summary")

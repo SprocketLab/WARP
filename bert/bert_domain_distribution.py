@@ -161,6 +161,10 @@ Get the dataloaders
 
 if(dataset_name == "yelp_review"):
     dataset = load_dataset("yelp/yelp_review_full")
+    
+elif(dataset_name=="yahoo_answers"):
+    dataset = load_dataset('mteb/yahoo_answers_topics')
+    
 else:
     dataset = load_dataset(dataset_name)
 
