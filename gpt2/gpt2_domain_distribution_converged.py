@@ -1,26 +1,43 @@
 """
-GPT-2 Domain Distribution Alignment Experiment
+GPT-2 Domain Distribution Alignment Experiment (Converged Model Variant)
 
-This script orchestrates a complete experiment for analyzing how different samples
-align with model fine-tuning trajectories using GPT-2 models. The experiment consists
-of several key steps:
+This script performs alignment analysis using a pre-trained converged model instead of
+fine-tuning from scratch. It loads a previously converged expert model and computes
+alignment scores for seed dataset samples across pseudo-expert interpolations.
 
-1. **Configuration Loading**: Loads experiment parameters from a JSON config file
-2. **Dataset Preparation**: Creates seed dataset D and fine-tuning dataset D'
-3. **Model Fine-tuning**: Trains GPT-2 from base to expert, saving intermediate checkpoints
-4. **Alignment Computation**: Computes alignment scores for all samples across pseudo-experts
+Key Steps:
+1. **Configuration Loading**: Loads experiment parameters from JSON config file
+2. **Dataset Preparation**: Loads seed dataset D using pre-saved indices
+3. **Model Loading**: Loads pre-trained base model and converged expert model
+4. **Alignment Computation**: Computes alignment scores across interpolated pseudo-experts
 5. **Results Saving**: Saves alignment matrices and statistics for analysis
 
-The main workflow:
-- Load configuration from JSON (dataset, model params, class distribution)
-- Create seed dataset D (for alignment) and fine-tuning dataset D' (biased distribution)
-- Fine-tune GPT-2 base model → expert model, save K intermediate pseudo-experts
-- For each pseudo-expert, compute alignment scores for all samples in D
-- Save alignment matrix M (N×K) and per-lambda statistics
+Main Workflow:
+- Load configuration from JSON (dataset, model params, interpolation settings)
+- Initialize GPT-2 tokenizer with proper padding configuration
+- Load seed dataset D using previously saved indices from dataset_info.json
+- Load base model θ_base and pre-trained converged model θ_expert
+- Create pseudo-experts via model interpolation (base ↔ expert)
+- Compute alignment matrix M (N×K) for all samples across K pseudo-experts
+- Save alignment results and statistics
+
+Differences from Standard Pipeline:
+- No fine-tuning performed (uses pre-converged model)
+- Reads converged_model.pt instead of training new expert
+- Faster execution for repeated alignment analysis
 
 Usage:
-    python gpt2_domain_distribution.py <config.json>
-    
+    python gpt2_domain_distribution_converged.py <config.json>
+
+Input Requirements:
+    - config.json: Experiment configuration file
+    - {output_dir}/dataset_info.json: Previously saved dataset indices
+    - {output_dir}/converged_model.pt: Pre-trained expert model weights
+
+Output:
+    - alignment_matrix_M.npy: N×K alignment scores matrix
+    - lambda_statistics.json: Per-interpolation point statistics
+    - converged_model/: Saved converged model directory
 """
 
 

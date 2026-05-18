@@ -16,7 +16,6 @@ Paper: link_to_be_put
 
 
 
-
 ## Experiment Pipeline 
 
 At a high level, the pipeline:
@@ -47,15 +46,25 @@ This repository currently contains two experiment implementations:
 
 ### `bert/`
 - `bert_domain_distribution.py` — Main runner: loads config, prepares data, fine-tunes model, computes alignment matrices
+
 - `bert_finetuning.py` — Fine-tunes BERT base → expert with intermediate checkpoint saving and saving converged and overtrained checkpoints 
+
 - `bert_models.py` — Pseudo-expert creation via linear/quadratic interpolation and mergekit-based methods (SLERP/TIES/DELLA)
-- `bert_alignment.py` — Computes alignment matrix using per-example last-layer gradients
+
+- `bert_alignment.py` — Computes alignment matrix using per-example last-layer gradients (not for the converged and overtrained)
+
 
 ### `gpt2/`
+
 - `gpt2_domain_distribution.py` — Main runner for GPT-2 (same pipeline as BERT)
+
 - `gpt2_finetuning.py` — Fine-tunes GPT-2 base → expert with intermediate checkpoint saving and saving converged and overtrained checkpoints 
+
+- `gpt2_domain_distribution_converged.py` - Computes alignment matrix using per-example last-layer gradients for checkpoints for converged model
+
 - `gpt2_models.py` — Pseudo-expert creation via linear/quadratic interpolation and mergekit-based methods (SLERP/TIES/DELLA)
-- `gpt2_alignment.py` — Computes alignment matrix using last-layer score gradients
+
+- `gpt2_alignment.py` — Computes alignment matrix using last-layer score gradients (not for the converged and overtrained)
 
 **Legacy:**
 - `old_code/` — Deprecated scripts kept for reference
@@ -66,35 +75,44 @@ This repository currently contains two experiment implementations:
 
 ### Install dependencies
 
-Using pip:
-
+Install Miniconda
 ```bash
-pip install -r requirements.txt
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+source ~/.bashrc
 ```
 
-Or using conda:
 
+Use conda 
 ```bash
-conda env create -f enviroment.yml
-conda activate <env-name>
+conda update -n base -c defaults conda
+conda env create -f environment.yml
+conda activate myenv
 ```
+
 ---
 
 ## Running an experiment
 
-Both pipelines are driven by a JSON config.
+
+
+- Use the experiment.ipynb to generate the configs easily 
+- You can also generate custom configs
+- Then open a tmux session and run the experiments in it using a jupyter browser
+
+
+Alternatively, if you want to just execute one experiment-: 
 
 ### BERT
-
 ```bash
 python bert/bert_domain_distribution.py path/to/config.json
 ```
 
 ### GPT-2
-
 ```bash
 python gpt2/gpt2_domain_distribution.py path/to/config.json
 ```
+
 
 Outputs are written to:
 - `output_dir = config.experiment_name`
@@ -103,13 +121,26 @@ Typical artifacts:
 - `{experiment_name}/dataset_info.json` — indices for \(D\) and \(D'\)
 - `{experiment_name}/theta_base_model.pt` — base weights
 - `{experiment_name}/theta_exp_model.pt` — expert weights
+- `{experiment_name}/converged_model.pt` - converged model weights (optional)
+-  `{experiment_name}overtrained_checkpoint.pt`- overtrained model weights (optional)
 - `{dataset}_{interpolation}_{proportionArr}/alignment_matrix_<interpolation>.npy` — alignment matrices
 - `{dataset}_{interpolation}_{proportionArr}/lambda_statistics.json` — per-λ summary stats
 
 ---
 
 
+## Generating the results 
 
+```bash
+mkdir -p results_datainfo/{model}/{dataset_name}
+mkdir -p results_align_matrix/{model}/{dataset_name}
+```
+- ensure to use the dataset name that is comptible with hugging face's methods
+- Move the {experiment_name}  directories to the appropriate subdirectory in results_datainfo
+- Move the {dataset}_{interpolation}_{proportionArr} directories to the appropriate subdirectory in results_align_matrix 
+- Run the baselines.ipynb , Visualizations.ipynb and kfold_pipeline.ipynb accordingly. There is no dependency of running before the other
+
+---
 
 ## Example config (template)
 
@@ -231,12 +262,8 @@ Full Training Dataset (100k samples)
 
 ## 🧐 Todo
 We welcome contributions and suggestions to the list!
-- [] Complete ReadMe 
+- [x] Complete ReadMe 
 - [] Convert ipynb files to python scripts
-- valudate quickstart 
-- validate the outputs of running an expriment
-- include that we need to save those inside those directories, and then run those files to get those results
-
 
 
 ## 📰 News
@@ -271,7 +298,15 @@ If you use the codes, please cite the following paper:
 
 - advanced interpolation methods (SLERP/TIES/DELLA) rely on `mergekit`. The repo’s `requirements.txt` includes a mergekit editable install; if mergekit import fails, those methods will be unavailable.
 
-- uncomment the code for converged and overtrained model 
+- uncomment the code for converged and overtrained model in [lines 251-282](bert/bert_domain_distribution.py#L251-L282) for bert and [lines 260-291](gpt2/gpt2_domain_distribution.py#L260-L291) for gpt2 if you want to save those checkpoints
+
+- for converged and overtrained checkpoint, they are generated normally as we execute experiment.ipynb. 
+
+- To generate the alignment matrix for those converged checkpoints, we should use [gpt2_domain_distribution_converged.py](gpt2/gpt2_domain_distribution_converged.py). Only small chnages are required to modify this file to work with overtrained and with bert and with other interpolations. Additonally, you would need to uncomment [lines 297-301](gpt2/gpt2_alignment.py#L297-L301)
+to change the name of the alignment matrix. During generating results, you would need to ensure that the methods are working with the converged or overtrained alignment matrix and would have to make small changes in that regard.
+
+
+
 
 ---
 
