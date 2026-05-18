@@ -233,7 +233,6 @@ Full Training Dataset (100k samples)
 We welcome contributions and suggestions to the list!
 - [] Complete ReadMe 
 - [] Convert ipynb files to python scripts
-- integrate license 
 - valudate quickstart 
 - validate the outputs of running an expriment
 - include that we need to save those inside those directories, and then run those files to get those results
