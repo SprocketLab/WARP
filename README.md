@@ -202,10 +202,11 @@ Typical artifacts:
 
 This parameter determines the **sampling strategy** for constructing the fine-tuning subset \(D'\):
 
-| Value | Description | Use Case |
-|-------|-------------|----------|
-| **`"original"`** | Sample \(D'\) **directly from the full training dataset** with target `proportionArr` distribution | ✅ Maximum data diversity<br>✅ \(D'\) is independent of seed subset \(D\)<br>✅ Use for standard fine-tuning experiments |
-| **`"select"`** | Sample \(D'\) **from the seed subset** \(D\) with target `proportionArr` distribution | ✅ Ensures \(D' \subseteq D\)<br>✅ Useful when \(D\) serves as the test set for alignment computation<br>✅ Guarantees \(D \setminus D'\) is available for evaluation |
+| Value | Description | 
+|-------|-------------|
+| **`"original"`** | Sample \(D'\) **directly from the full training dataset** with target `proportionArr` distribution |
+| **`"select"`** | Sample \(D'\) **from the seed subset** \(D\) with target `proportionArr` distribution | 
+
 
 **Visual Comparison:**
 
