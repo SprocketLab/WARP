@@ -23,7 +23,7 @@ At a high level, the pipeline:
 1. Selects a **seed subset** \(D\) of training data.
 2. Builds a **fine-tuning subset** \(D'\) with a controlled class distribution.
 3. Fine-tunes a base model into an **expert** (saving intermediate checkpoints along the way).
-4. Constructs **pseudo-expert models** along the base → expert path (via interpolation / merge).
+4. Constructs **pseudo-expert models** along the base → expert path (via interpolations).
 5. Computes a per-example **alignment matrix** \(M\) using **last-layer gradients**.
 
 This repository currently contains two experiment implementations:
@@ -38,23 +38,23 @@ This repository currently contains two experiment implementations:
 - `data.py` — Dataset loading, filtering, subset selection (D and D'), and DataLoader creation
 
 **Notebooks:**
-- `experiment.ipynb` — Interactive experiment driver
-- `Baselines.ipynb` — Baseline model comparisons
-- `Visualizations.ipynb` — Plotting and visualization utilities
-- `edit_plots.ipynb` — Plot refinement and polishing
+- `experiment.ipynb` — ipynb file to start running the experiments
+- `Baselines.ipynb` — ipynb file to generate the Baseline model comparisons
+- `Visualizations.ipynb` — ipynb file for generating the visualization utilities e.g alignment matrix visualizations
+- `kfold_pipeline.ipynb` — ipynb file for generating training point files, running Kfold validation and saving the results
 
 **Model-specific pipelines:**
 
 ### `bert/`
 - `bert_domain_distribution.py` — Main runner: loads config, prepares data, fine-tunes model, computes alignment matrices
-- `bert_finetuning.py` — Fine-tunes BERT base → expert with optional intermediate checkpoint saving
+- `bert_finetuning.py` — Fine-tunes BERT base → expert with intermediate checkpoint saving and saving converged and overtrained checkpoints 
 - `bert_models.py` — Pseudo-expert creation via linear/quadratic interpolation and mergekit-based methods (SLERP/TIES/DELLA)
 - `bert_alignment.py` — Computes alignment matrix using per-example last-layer gradients
 
 ### `gpt2/`
 - `gpt2_domain_distribution.py` — Main runner for GPT-2 (same pipeline as BERT)
-- `gpt2_finetuning.py` — Fine-tunes GPT-2 base → expert with checkpoint saving
-- `gpt2_models.py` — Pseudo-expert creation via interpolation and mergekit methods
+- `gpt2_finetuning.py` — Fine-tunes GPT-2 base → expert with intermediate checkpoint saving and saving converged and overtrained checkpoints 
+- `gpt2_models.py` — Pseudo-expert creation via linear/quadratic interpolation and mergekit-based methods (SLERP/TIES/DELLA)
 - `gpt2_alignment.py` — Computes alignment matrix using last-layer score gradients
 
 **Legacy:**
@@ -260,15 +260,17 @@ If you use the codes, please cite the following paper:
 
 ## Notes 
 
--   This is a research-grade codebase, and some parts may still be mid-refactor. If you run into issues that are hard to resolve, please reach out for further assistance.
+-  This is a research-grade codebase, and some parts may still be mid-refactor. If you run into issues that are hard to resolve, please reach out for further assistance.
 
 -  If a dataset is not natively supported in the repo, make sure to use the dataset name in the format expected by Hugging Face’s load_dataset
 
--     By default, the repo uses the "text" column to generate tokens. If your dataset uses a different text column, update it accordingly in data.py [lines 246-252](data.py#L246-L252)
+-  By default, the repo uses the "text" column to generate tokens. If your dataset uses a different text column, update it accordingly in data.py [lines 246-252](data.py#L246-L252)
 
 - to integrate another optimzier, pls change [lines 321-332](bert/bert_finetuning.py#L321-L332) for bert  or [lines 377-387](gpt2/gpt2_finetuning.py#L377-L387) for gpt2
 
 - advanced interpolation methods (SLERP/TIES/DELLA) rely on `mergekit`. The repo’s `requirements.txt` includes a mergekit editable install; if mergekit import fails, those methods will be unavailable.
+
+- uncomment the code for converged and overtrained model 
 
 ---
 
