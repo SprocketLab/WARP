@@ -30,8 +30,6 @@ This repository currently contains two experiment implementations:
 
 ---
 
-## Repository structure
-
 ## 📁 Repository Structure
 
 **Top-level utilities:**
@@ -143,7 +141,7 @@ Typical artifacts:
 
 
 
----
+## Parameters
 
 ### Core Parameters
 
@@ -262,7 +260,7 @@ If you use the codes, please cite the following paper:
 
 ```
 
-## Notes / caveats
+## Notes 
 
 -   This is a research-grade codebase, and some parts may still be mid-refactor. If you run into issues that are hard to resolve, please reach out for further assistance.
 
@@ -278,7 +276,5 @@ If you use the codes, please cite the following paper:
 
 ## License
 
-No license file is currently included. Add one if you plan to share/distribute this repository.
-
-
+This project is licensed under the [MIT License](LICENSE.md).
 
