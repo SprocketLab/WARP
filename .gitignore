@@ -2,7 +2,9 @@ sample_hacking_*
 *.pkl
 *.json
 /results_*
-/kfold_models
+/kfold
+/kfold_models_*
+/kfold_results
 /mergekit
 merge.ipynb
 *.npy
@@ -17,5 +19,8 @@ merge.ipynb
 /snli_*
 **/__pycache__
 **/__pycache__
-*.png
 baselines_*.ipynb
+/accuracy_visualizations
+/centroid_mae_visualizations
+/mia_threshold_baseline_visualization
+/one_layer_baseline_visualizations

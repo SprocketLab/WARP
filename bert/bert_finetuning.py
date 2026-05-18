@@ -6,6 +6,7 @@ import torch.nn as nn
 import pickle as pl
 from tqdm import tqdm
 import random
+import sys
 
 
 class Finetuning:
@@ -321,9 +322,13 @@ class Finetuning:
         if(self.optimizer=="Adam"):
             # for adaptive learning rates
             optimizer = AdamW(theta_exp_model.parameters(), lr=self.learning_rate)
-        else:
+            
+        elif(self.optimizer=="SGD"):
             # for static learning rate
             optimizer = SGD(theta_exp_model.parameters(), lr=self.learning_rate)
+            
+        else:
+            sys.exit("No optimizer selected")
             
         print(f"Fine-tuning configuration:")
         print(f"  Learning rate: {self.learning_rate}")
