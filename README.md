@@ -152,7 +152,6 @@ Typical artifacts:
 | `model_name` | `string` | Pre-trained model from HuggingFace | `"bert-base-uncased"`, `"gpt2"` |
 | `num_labels` | `int` | Number of classification classes
 
----
 
 ### Training Hyperparameters
 
@@ -164,7 +163,6 @@ Typical artifacts:
 | `num_epochs` | `int` | Number of fine-tuning epochs 
 | `optimizer` | `string` | Optimization algorithm | `"Adam"`, `"SGD"` |
 
----
 
 ### Pseudo-Expert Generation
 
@@ -188,7 +186,6 @@ Typical artifacts:
 | **`"della"`** | DELLA: Adaptive weight averaging 
 
 
----
 
 ### Data Sampling Configuration
 
