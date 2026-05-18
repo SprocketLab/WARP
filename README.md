@@ -263,7 +263,9 @@ Full Training Dataset (100k samples)
 ## 🧐 Todo
 We welcome contributions and suggestions to the list!
 - [x] Complete ReadMe 
-- [] Convert ipynb files to python scripts
+- Convert ipynb files to python scripts
+- Restructure the project directory to seprate the ipynb files
+- Integrate the complete converged and overtrained experiment code into one central file
 
 
 ## 📰 News
