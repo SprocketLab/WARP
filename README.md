@@ -66,9 +66,6 @@ This repository currently contains two experiment implementations:
 
 - `gpt2_alignment.py` — Computes alignment matrix using last-layer score gradients (not for the converged and overtrained)
 
-**Legacy:**
-- `old_code/` — Deprecated scripts kept for reference
-
 ---
 
 ## Quickstart
