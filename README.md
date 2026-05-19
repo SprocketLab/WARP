@@ -87,7 +87,7 @@ Use conda
 ```bash
 conda update -n base -c defaults conda
 conda env create -f environment.yml
-conda activate myenv
+conda activate warp
 ```
 
 ---
