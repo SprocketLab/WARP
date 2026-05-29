@@ -273,16 +273,14 @@ We welcome contributions and suggestions to the list!
 ## 📑 Citation
 If you use the codes, please cite the following paper:
 ```bibtex
-@misc{
-      title={WARP: Weight-Space Analysis for Recovering Training Data Portfolios},
-      author={Aditya Goyal and Tzu-Heng Huang and John Cooper and Frederic Sala},
-      year={2026},
-      eprint={to_be_put},
-      archivePrefix={arXiv},
-      primaryClass={to_be_put},
-      url={link_to_be_put},
+@inproceedings{
+huang2026warp,
+title={{WARP}: Weight-Space Analysis for Recovering Training Data Portfolios},
+author={Tzu-Heng Huang and Aditya Goyal and John Cooper and Frederic Sala},
+booktitle={ICML 2026 Workshop on Weight-Space Symmetries: from Foundations to Practical Applications},
+year={2026},
+url={https://openreview.net/forum?id=5GJDmHFNUY}
 }
-
 ```
 
 ## Notes 
