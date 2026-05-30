@@ -267,7 +267,7 @@ We welcome contributions and suggestions to the list!
 
 ## 📰 News
 - [2025/05] Our paper is submitted to ICML workshop 2026: Weight-Space Symmetries!
-
+- [2025/05] Our paper is accpeted to ICML workshop 2026: Weight-Space Symmetries!
 
 
 ## 📑 Citation
