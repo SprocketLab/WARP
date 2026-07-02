@@ -5,7 +5,7 @@
 Official repositry for "WARP: Weight-Space Analysis for Recovering Training Data Portfolios" which is accepted to the ICML 2026 Workshop on Weight-Space Symmetries. In our paper, we introduce WARP, a framework that recovers a fine-tuned model’s domain mixture directly from its released weights. WARP extracts geometric features and maps them to domain proportions using either a parameter-free softmax readout or a MLP projector trained on synthetic mixtures. In controlled experiments with BERT and GPT-2, WARP recovers domain mixtures with MAE as low as 0.048 and 0.117 respectively, outperforming membership inference and a variant with access to the true training trajectory, and remains accurate when recovering different training recipes.
 
 
-Paper: link_to_be_put
+[Link to Paper](https://openreview.net/pdf?id=5GJDmHFNUY)
 
 
 
