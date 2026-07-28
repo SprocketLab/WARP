@@ -273,13 +273,11 @@ We welcome contributions and suggestions to the list!
 ## 📑 Citation
 If you use the codes, please cite the following paper:
 ```bibtex
-@inproceedings{
-huang2026warp,
-title={{WARP}: Weight-Space Analysis for Recovering Training Data Portfolios},
-author={Tzu-Heng Huang and Aditya Goyal and John Cooper and Frederic Sala},
-booktitle={ICML 2026 Workshop on Weight-Space Symmetries: from Foundations to Practical Applications},
-year={2026},
-url={https://openreview.net/forum?id=5GJDmHFNUY}
+@inproceedings{huang2026warp,
+  title={WARP: Weight-Space Analysis for Recovering Training Data Portfolios},
+  author={Huang, Tzu-Heng and Goyal, Aditya and Cooper, John and Sala, Frederic},
+  booktitle={ICML 2026 Workshop on Weight-Space Symmetries: from Foundations to Practical Applications},
+  year={2026}
 }
 ```
 
